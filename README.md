@@ -36,7 +36,7 @@ pip install -r requirements.txt
 
 Step 3: Configure Environment Variables
 
-The script relies on API keys for OpenAI and Anthropic services, managed securely through a .env file.
+The script relies on API keys for OpenAI, Anthropic, and Grok services, managed securely through a .env file.
 
 3.1 Create a .env File
 
