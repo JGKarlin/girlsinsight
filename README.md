@@ -140,13 +140,14 @@ Here’s an example of what the .env file should look like:
 
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
+GROQ_API_KEY=your_groq_api_key
 
 Troubleshooting
 	1.	Missing Dependencies:
 	•	Run pip install -r requirements.txt to ensure all dependencies are installed.
 	2.	API Key Issues:
 	•	Verify your .env file contains valid API keys.
-	•	Ensure your account has access to the OpenAI and Anthropic APIs.
+	•	Ensure your account has access to the OpenAI, Anthropic, or Groq APIs.
 	3.	Scraping Errors:
 	•	Check that GirlsChannel.net is accessible and functional.
 	•	Update the scraping logic if the website layout changes.
