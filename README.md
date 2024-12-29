@@ -82,16 +82,16 @@ Menu Options
 検索キーワードを入力ください: 
 
 
-	•	Select a date range:
-	•	All time: Press 1
-	•	Past year: Press 2
-	•	Past month: Press 3
-	•	Past week: Press 4
-	•	The script constructs a search URL, retrieves topic links, and analyzes matching results.
-	•	Specify:
-	•	Language for output: Japanese (1) or English (2).
-	•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
-	•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
+		•	Select a date range:
+		•	All time: Press 1
+		•	Past year: Press 2
+		•	Past month: Press 3
+		•	Past week: Press 4
+		•	The script constructs a search URL, retrieves topic links, and analyzes matching results.
+		•	Specify:
+			•	Language for output: Japanese (1) or English (2).
+			•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
+			•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
 
 	3.	Option 3: Help or Quit
 		•	Quit the script or request additional help.
