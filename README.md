@@ -70,7 +70,6 @@ Menu Options
 • Specify:
  • Language for output: Japanese (1) or English (2).
  • AI Model for Summarization: OpenAI, Anthropic, or Groq.
- • AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
 
 2. Option 2: Search by Keyword
 • Enter a search term: 検索キーワードを入力ください: 
