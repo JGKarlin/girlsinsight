@@ -403,7 +403,7 @@ def summarize_article_with_anthropic(article_text, language_selection):
     language = language_options.get(language_selection, "")
     system_prompt = f"You are an expert content creator with a knack for providing concise yet captivating summaries in {language}."
     message = client_anthropic.messages.create(
-        model="claude-3-5-sonnet-20240620",
+        model="claude-3-5-sonnet-latest",
         max_tokens=2048,
         temperature=0.2,
         system=system_prompt,
@@ -440,7 +440,7 @@ def summarize_topic_with_anthropic(topcomment_text, language_selection):
     language = language_options.get(language_selection, "")
     system_prompt = f"You are a social media analyst who excels at explaining the meaning of posts in {language}."
     message = client_anthropic.messages.create(
-        model="claude-3-5-sonnet-20240620",
+        model="claude-3-5-sonnet-latest",
         max_tokens=2048,
         temperature=0.2,
         system=system_prompt,
@@ -518,7 +518,7 @@ def evaluate_sentiment_with_anthropic(search_query, highest_sentiment_comments, 
     system_prompt = f"You are a helpful Japanese assistant trained to analyze comments from the online forum GirlsChannel.net related to {search_query}. Your task is to write a comprehensive, cohesive essay in {language} that evaluates the sentiments expressed by the users. The essay should integrate the main themes, emotions, and attitudes present in the comments, providing a nuanced perspective on the overall community sentiment. Aim to write a well-structured essay of approximately 500 words, focusing on the predominant opinions while also considering dissenting views. The essay should flow smoothly, without being divided into distinct sections."
 
     message = client_anthropic.messages.create(
-        model="claude-3-5-sonnet-20240620",
+        model="claude-3-5-sonnet-latest",
         max_tokens=4096,
         temperature=0.3,
         system=system_prompt,
