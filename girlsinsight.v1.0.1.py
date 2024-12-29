@@ -35,6 +35,11 @@ from urllib.parse import quote_plus
 import warnings
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
+os.environ['IMK_DISABLE_LOGGING'] = '1'
+
+# Add these lines near the top of your script, before setting the locale
+f = open(os.devnull, 'w')
+sys.stderr = f
 
 # Get the current date and time
 current_datetime = dt.now()
@@ -302,7 +307,7 @@ def create_url_list(url_to_process):
                 break
         except requests.ConnectionError:
             print(f"\nConnectionError encountered. \nTrying to find {gc_url} on the Wayback Machine...")
-            wayback_url = search_wayback_machine(gc_url)
+            wayback_url = search_wayback_machine(gc_url, headers)  # Add headers parameter here
             if wayback_url:
                 print("\nアーカイブ版が見つかりました。")
                 all_urls = [wayback_url]  # Replace all_urls with the Wayback Machine URL
@@ -313,7 +318,7 @@ def create_url_list(url_to_process):
         except requests.exceptions.RequestException as e:
             print(f"\nError occurred while processing {gc_url}: {str(e)}")
             print(f"\nTrying to find {gc_url} on the Wayback Machine...")
-            wayback_url = search_wayback_machine(gc_url)
+            wayback_url = search_wayback_machine(gc_url, headers)  # Add headers parameter here
             if wayback_url:
                 print("\nアーカイブ版が見つかりました。")
                 all_urls = [wayback_url]  # Replace all_urls with the Wayback Machine URL
@@ -329,10 +334,10 @@ def extract_text_from_url(all_urls, headers):
     article_text = []
     for gc_url in all_urls:
         try:
-            # Extract text from a URL
             response = requests.get(gc_url, headers=headers)
-            response.encoding = 'utf-8'
-            soup = BeautifulSoup(response.content, 'html.parser')
+            # Force encoding to UTF-8 or try to detect the correct encoding
+            response.encoding = response.apparent_encoding or 'utf-8'
+            soup = BeautifulSoup(response.content.decode(response.encoding, errors='replace'), 'html.parser')
             article_text.append(' '.join(p.get_text() for p in soup.find_all('p')))
         except requests.exceptions.RequestException as e:
             print(f"Error extracting text from URL: {gc_url}")
@@ -342,10 +347,10 @@ def extract_text_from_url(all_urls, headers):
 #Analyze page for next page URL
 def get_nextpage_link(page_source):
     response = client_gpt.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         max_tokens=500,
         messages=[
-            {"role": "system", "content": "You are an expert HTML analyst."},
+            {"role": "system", "content": "You are an HTML parser. Respond ONLY with a URL or 'null'."},
             {"role": "user", "content": f"Please analyze the following HTML to determine 1) if there is a link to the 'full text' of the article, and then respond with just the link to the 記事全文; or 2) if the news story is multipaged or paginated, then respond with only the full URL for the next page of the same article and not the next article. Specifically, look for indicators such as classes or IDs containing keywords like 'next', '次', or '続き'; and elements that indicate pagination, such as navigation arrows. If there is no next page url, then respond with only the word 'null'. HTML Content: {page_source}."}
         ],
     )
@@ -355,10 +360,10 @@ def check_news_story_status(url_to_process):
     gc_url = url_to_process
     page_source_for_analysis = get_page_source(gc_url)
     response = client_gpt.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         max_tokens=50,
         messages=[
-            {"role": "system", "content": "You are an expert HTML analyst."},
+            {"role": "system", "content": "You are an HTML parser."},
             {"role": "user", "content": f"Please analyze the following HTML source to determine if the news story has been deleted, removed, or expired. Look for indicators such as error messages, '404' status codes, or specific phrases like 'Page not found', '記事が見つかりません', or 'expired'. If the news story is still available, respond with 'active'. If it has been deleted, removed, or expired, respond with 'inactive'. Respond only with either 'active' or 'inactive'. HTML Content: {page_source_for_analysis}"}
         ],
     )
@@ -379,7 +384,7 @@ def summarize_article_with_groq(article_text, language_selection):
                 "content": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instuctions in your response.",
             }
         ],
-        model="llama3-70b-8192",
+        model="llama-3.1-70b-versatile",
         max_tokens=2048,
     )
     return response.choices[0].message.content
@@ -473,7 +478,7 @@ def summarize_topic_with_groq(topcomment_text, language_selection):
                 "content": f"In {language}, please explain the overall meaning and likely intent of the post, combining insights from its title, {header}, and the accompanying comment, {topcomment_text}. Avoid restating the title and comment or using introductory phrases.",
             }
         ],
-        model="llama3-70b-8192",
+        model="llama-3.1-70b-versatile",
         max_tokens=2048,
     )
     return response.choices[0].message.content
@@ -492,8 +497,8 @@ def evaluate_sentiment_with_groq(search_query, highest_sentiment_comments, lowes
                 "content": f"In {language}, provide a comprehensive analysis and summary of the overall sentiment on {search_query} based on the following dataset aggregated from GirlsChannel.net. This dataset includes the {comments_to_analyze} most upvoted comments {highest_sentiment_comments} alongside the {comments_to_analyze} most downvoted comments {lowest_sentiment_comments}, reflecting the community's overall sentiment and opinion. Since the {lowest_sentiment_comments} have been voted down by users, you should interpret the prevailing opinion or sentiment to be in strong disagreement with the {lowest_sentiment_comments}. Evaluate these two sets of comments together, and then integrate the sentiments and themes they express to discern the collective opinion on {search_query}. Focus on the predominant emotions, attitudes, and topics to understand what aspects of {search_query} that resonate most with the GirlsChannel.net online community. Provide a detailed summary of the prevailing sentiment, encapsulating the community's stance on {search_query}. Aim to offer a nuanced perspective on the community's overall sentiment, highlighting the majority opinion while also considering dissenting views. Your analysis should be approximately 500 words in length. Comments: {highest_sentiment_comments} {lowest_sentiment_comments}\n. At the end of the essay, please evaluate the overall sentiment of the comments as either positive, neutral, or negative; and assign a sentiment score from 0-10, with 0 being highly negative and 10 being highly positive. Provide your analysis in the following format:\n\nSentiment: <positive/neutral/negative>\nScore: <0-10>",
             }
         ],
-        model="llama3-70b-8192",
-        max_tokens=4800,
+        model="llama-3.1-70b-versatile",
+        max_tokens=4000,
     )
     return response.choices[0].message.content
 
