@@ -44,8 +44,9 @@ Create a .env file in the root directory with the following format:
 
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
+GROQ_API_KEY=your_groq_api_key
 
-Replace your_openai_api_key and your_anthropic_api_key with your actual API credentials.
+Replace your_openai_api_key, your_anthropic_api_key, or groq_api_key with your actual API credentials.
 
 3.2 Load Environment Variables
 
