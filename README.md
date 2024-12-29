@@ -64,20 +64,20 @@ python girlsinsight.v1.0.1.py
 Usage
 
 Menu Options
-1.	Option 1: Analyze a Specific URL
-		•	Enter a topic URL from GirlsChannel.net: トピックのURLを入力してください: 
-		•	The script validates the URL and retrieves the corresponding comments for analysis.
-		•	Specify:
-			•	Language for output: Japanese (1) or English (2).
-			•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
-			•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
+1. Option 1: Analyze a Specific URL
+ •	Enter a topic URL from GirlsChannel.net: トピックのURLを入力してください: 
+ •	The script validates the URL and retrieves the corresponding comments for analysis.
+ •	Specify:
+		•	Language for output: Japanese (1) or English (2).
+		•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
+		•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
 
-2.	Option 2: Search by Keyword
-		•	Enter a search term: 検索キーワードを入力ください: 
-		•	Select a date range:
-		•	All time: Press 1
-		•	Past year: Press 2
-		•	Past month: Press 3
+2. Option 2: Search by Keyword
+ •	Enter a search term: 検索キーワードを入力ください: 
+	•	Select a date range:
+	•	All time: Press 1
+	•	Past year: Press 2
+	•	Past month: Press 3
 		•	Past week: Press 4
 		•	The script constructs a search URL, retrieves topic links, and analyzes matching results.
 		•	Specify:
@@ -85,18 +85,18 @@ Menu Options
 			•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
 			•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
 
-3.	Option 3: Help or Quit
+3. Option 3: Help or Quit
 		•	Quit the script or request additional help.
 
 Workflow
 1.	Web Scraping:
-		•	Retrieves comments and metadata based on a provided URL or search term.
+ •	Retrieves comments and metadata based on a provided URL or search term.
 		•	Filters results by upvotes and downvotes for balanced analysis.
 2.	Sentiment Analysis:
 		•	Integrates OpenAI and Anthropic APIs to evaluate comments.
 		•	Analyzes emotions, themes, and cultural context.
 3.	Localization:
-		•	Outputs text summaries and visualizations in either Japanese or English.
+	•	Outputs text summaries and visualizations in either Japanese or English.
 4.	Visualization:
 		•	Generates line plots and summary charts to track sentiment trends.
 5.	Data Export:
