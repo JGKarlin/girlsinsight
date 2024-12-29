@@ -65,23 +65,15 @@ Usage
 
 Menu Options
 	1.	Option 1: Analyze a Specific URL
-		•	Enter a topic URL from GirlsChannel.net:
-
-			トピックのURLを入力してください: 
-
-
+		•	Enter a topic URL from GirlsChannel.net: トピックのURLを入力してください: 
 		•	The script validates the URL and retrieves the corresponding comments for analysis.
 		•	Specify:
-		•	Language for output: Japanese (1) or English (2).
-		•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
-		•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
+			•	Language for output: Japanese (1) or English (2).
+			•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
+			•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
 
 	2.	Option 2: Search by Keyword
-		•	Enter a search term:
-
-検索キーワードを入力ください: 
-
-
+		•	Enter a search term: 検索キーワードを入力ください: 
 		•	Select a date range:
 		•	All time: Press 1
 		•	Past year: Press 2
@@ -154,7 +146,7 @@ Troubleshooting
 
 Contributing
 
-Contributions are welcome! Please fork the repository, create a feature branch, and submit a pull request.
+Contributions are always welcome! Please fork the repository, create a feature branch, and submit a pull request.
 
 License
 
