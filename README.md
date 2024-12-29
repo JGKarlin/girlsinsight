@@ -65,52 +65,52 @@ Usage
 
 Menu Options
 1. Option 1: Analyze a Specific URL
- •	Enter a topic URL from GirlsChannel.net: トピックのURLを入力してください: 
- •	The script validates the URL and retrieves the corresponding comments for analysis.
- •	Specify:
-		•	Language for output: Japanese (1) or English (2).
-		•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
-		•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
+•	Enter a topic URL from GirlsChannel.net: トピックのURLを入力してください: 
+•	The script validates the URL and retrieves the corresponding comments for analysis.
+•	Specify:
+ •	Language for output: Japanese (1) or English (2).
+ •	AI Model for Summarization: OpenAI, Anthropic, or Groq.
+ •	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
 
 2. Option 2: Search by Keyword
- •	Enter a search term: 検索キーワードを入力ください: 
-	•	Select a date range:
-	•	All time: Press 1
-	•	Past year: Press 2
-	•	Past month: Press 3
-		•	Past week: Press 4
-		•	The script constructs a search URL, retrieves topic links, and analyzes matching results.
-		•	Specify:
-			•	Language for output: Japanese (1) or English (2).
-			•	AI Model for Summarization: OpenAI, Anthropic, or Groq.
-			•	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
+•	Enter a search term: 検索キーワードを入力ください: 
+•	Select a date range:
+ •	All time: Press 1
+ •	Past year: Press 2
+ •	Past month: Press 3
+ •	Past week: Press 4
+•	The script constructs a search URL, retrieves topic links, and analyzes matching results.
+•	Specify:
+ •	Language for output: Japanese (1) or English (2).
+ •	AI Model for Summarization: OpenAI, Anthropic, or Groq.
+ •	AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
 
 3. Option 3: Help or Quit
-	•	Quit the script or request additional help.
+•	Quit the script or request additional help.
 
 Workflow
 1.	Web Scraping:
- •	Retrieves comments and metadata based on a provided URL or search term.
-	•	Filters results by upvotes and downvotes for balanced analysis.
+•	Retrieves comments and metadata based on a provided URL or search term.
+•	Filters results by upvotes and downvotes for balanced analysis.
 2.	Sentiment Analysis:
-	•	Integrates OpenAI and Anthropic APIs to evaluate comments.
-	•	Analyzes emotions, themes, and cultural context.
+•	Integrates OpenAI and Anthropic APIs to evaluate comments.
+•	Analyzes emotions, themes, and cultural context.
 3.	Localization:
-	•	Outputs text summaries and visualizations in either Japanese or English.
+•	Outputs text summaries and visualizations in either Japanese or English.
 4.	Visualization:
-	•	Generates line plots and summary charts to track sentiment trends.
+•	Generates line plots and summary charts to track sentiment trends.
 5.	Data Export:
-	•	Saves results to .xlsx, .png, and .txt files for easy sharing.
+•	Saves results to .xlsx, .png, and .txt files for easy sharing.
 
 Outputs
 
 The script organizes outputs into an outputs/ directory, which includes:
 1. Excel Files (comments_<query>.xlsx):
-	•	Contains detailed metadata of comments (e.g., text, upvotes, downvotes, and date).
+•	Contains detailed metadata of comments (e.g., text, upvotes, downvotes, and date).
 2. Text Summaries (output_<query>.txt):
-	•	Summarizes the community’s sentiment based on upvoted and downvoted comments.
+•	Summarizes the community’s sentiment based on upvoted and downvoted comments.
 3. Visualization Files (lineplot_<query>.png and plot_<query>.png):
-	•	Line plots and summary charts showing trends and sentiment scores.
+•	Line plots and summary charts showing trends and sentiment scores.
 
 Directory Structure
 
@@ -136,13 +136,13 @@ GROQ_API_KEY=your_groq_api_key
 
 Troubleshooting
 1. Missing Dependencies:
-	•	Run pip install -r requirements.txt to ensure all dependencies are installed.
+•	Run pip install -r requirements.txt to ensure all dependencies are installed.
 2. API Key Issues:
-	•	Verify your .env file contains valid API keys.
-	•	Ensure your account has access to the OpenAI, Anthropic, or Groq APIs.
+•	Verify your .env file contains valid API keys.
+•	Ensure your account has access to the OpenAI, Anthropic, or Groq APIs.
 3. Scraping Errors:
-	•	Check that GirlsChannel.net is accessible and functional.
- •	Update the scraping logic if the website layout changes.
+•	Check that GirlsChannel.net is accessible and functional.
+•	Update the scraping logic if the website layout changes.
 
 Contributing
 
