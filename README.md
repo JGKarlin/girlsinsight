@@ -105,11 +105,11 @@ Workflow
 Outputs
 
 The script organizes outputs into an outputs/ directory, which includes:
-1.	Excel Files (comments_<query>.xlsx):
+1. Excel Files (comments_<query>.xlsx):
 		•	Contains detailed metadata of comments (e.g., text, upvotes, downvotes, and date).
-2.	Text Summaries (output_<query>.txt):
+2. Text Summaries (output_<query>.txt):
 		•	Summarizes the community’s sentiment based on upvoted and downvoted comments.
-3.	Visualization Files (lineplot_<query>.png and plot_<query>.png):
+3. Visualization Files (lineplot_<query>.png and plot_<query>.png):
 		•	Line plots and summary charts showing trends and sentiment scores.
 
 Directory Structure
@@ -135,12 +135,12 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 GROQ_API_KEY=your_groq_api_key
 
 Troubleshooting
-1.	Missing Dependencies:
+1. Missing Dependencies:
 		•	Run pip install -r requirements.txt to ensure all dependencies are installed.
-2.	API Key Issues:
+2. API Key Issues:
 		•	Verify your .env file contains valid API keys.
 		•	Ensure your account has access to the OpenAI, Anthropic, or Groq APIs.
-3.	Scraping Errors:
+3. Scraping Errors:
 		•	Check that GirlsChannel.net is accessible and functional.
 		•	Update the scraping logic if the website layout changes.
 
