@@ -1,4 +1,4 @@
-<# GirlsInsight #>
+# GirlsInsight #
 
 GirlsInsight is a Python tool for advanced sentiment analysis of GirlsChannel.net comments. By analyzing upvoted and downvoted comments, it evaluates themes, emotions, and cultural contexts to provide nuanced insights into online community sentiment. Designed for researchers, analysts, and developers, GirlsInsight simplifies the process of gathering, analyzing, and visualizing large datasets.
 
