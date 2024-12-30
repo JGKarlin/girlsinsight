@@ -52,6 +52,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 GROQ_API_KEY=your_groq_api_key
 
 Replace your_openai_api_key, your_anthropic_api_key, or groq_api_key with your actual API credentials.
+Anthropic and Grok API keys are not required but an OpenAI key is required.
 
 3.2 Load Environment Variables
 
