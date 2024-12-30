@@ -99,7 +99,7 @@ python girlsinsight.v1.0.1.py
 
 ### Workflow
 1. **Web Scraping**: Retrieves comments and metadata based on a provided URL or search term. Filters results by upvotes and downvotes for balanced analysis.
-2. **Sentiment Analysis**: Integrates OpenAI and Anthropic APIs to evaluate comments, analyzing emotions, themes, and cultural context.
+2. **Sentiment Analysis**: Integrates OpenAI, Anthropic and Grok APIs to evaluate comments, analyzing emotions, themes, and cultural context.
 3. **Localization**: Outputs text summaries and visualizations in either Japanese or English.
 4. **Visualization**: Generates line plots and summary charts to track sentiment trends.
 5. **Data Export**: Saves results to `.xlsx`, `.png`, and `.txt` files for easy sharing.
