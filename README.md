@@ -7,12 +7,12 @@ GirlsInsight is a Python tool for advanced sentiment analysis of GirlsChannel.ne
 ## Features
 - **Web Scraping**: Automatically retrieves comments and metadata from GirlsChannel.net using BeautifulSoup.
 - **Sentiment Analysis**: Evaluates community consensus and disagreement by analyzing explicit user feedback through upvotes/downvotes, performing comment content analysis using GPT-4, Claude, or Groq LLMs, conducting comparative analysis between highest and lowest rated comments, and providing quantitative scoring on a 0-10 scale.
-- **Data Visualization**: Creates the following five data visualizations using Matplotlib and Seaborn.
- 1. Most Upvoted Comments Bar Chart: Shows the distribution of positive ratings for the most highly rated comments in descending order.
- 2. Most Downvoted Comments Bar Chart: Displays the distribution of negative ratings for the most poorly rated comments in descending order.
- 3. Consistency Comparison Bar Chart: Compares the consistency scores between highly rated and lowly rated comment groups.
- 4. Overall Agreement Pie Chart: Visualizes the overall level of community consensus by showing the proportion of agreement versus disagreement.
- 5. Comment Frequency Line Chart: Tracks how many comments were posted over time, with automatically adjusted time intervals based on the data span.
+- **Data Visualizations**: Creates the following five data visualizations using Matplotlib and Seaborn.
+	1. Most Upvoted Comments Bar Chart: Shows the distribution of positive ratings for the most highly rated comments in descending order.
+	2. Most Downvoted Comments Bar Chart: Displays the distribution of negative ratings for the most poorly rated comments in descending order.
+	3. Consistency Comparison Bar Chart: Compares the consistency scores between highly rated and lowly rated comment groups.
+	4. Overall Agreement Pie Chart: Visualizes the overall level of community consensus by showing the proportion of agreement versus disagreement.
+	5. Comment Frequency Line Chart: Tracks how many comments were posted over time, with automatically adjusted time intervals based on the data span.
 - **Excel Export**: Saves processed comments and analysis results in `.xlsx` format for further use.
 - **Localized Interface**: Outputs results in either English or Japanese, depending on your preference.
 
