@@ -7,7 +7,7 @@ GirlsInsight is a Python tool for advanced sentiment analysis of GirlsChannel.ne
 ## Features
 
 - **Web Scraping**: Automatically retrieves comments and metadata from GirlsChannel.net using BeautifulSoup.
-- **Sentiment Analysis**: Evaluates community consensus and disagreement by analyzing explicit user feedback through upvotes/downvotes, performing comment content analysis using GPT-4, Claude, or Groq LLMs, conducting comparative analysis between highest and lowest rated comments, and providing quantitative scoring on a 0-10 scale.
+- **Sentiment Analysis**: Evaluates community consensus and disagreement by analyzing explicit user feedback through upvotes/downvotes, performing comment content analysis using OpenAI, Anthropic, or Groq LLMs, conducting comparative analysis between highest and lowest rated comments, and providing quantitative scoring on a 0-10 scale.
 - **Data Visualizations**: Creates the following five data visualizations using Matplotlib and Seaborn:
   1. **Most Upvoted Comments Bar Chart**: Shows the distribution of positive ratings for the most highly rated comments in descending order.
   2. **Most Downvoted Comments Bar Chart**: Displays the distribution of negative ratings for the most poorly rated comments in descending order.
