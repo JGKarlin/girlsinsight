@@ -7,7 +7,7 @@ GirlsInsight is a Python tool for advanced sentiment analysis of GirlsChannel.ne
 ## Features
 
 - **Web Scraping**: Automatically retrieves comments and metadata from GirlsChannel.net using BeautifulSoup.
-- **Sentiment Analysis**: Evaluates community consensus and disagreement by analyzing explicit user feedback through upvotes/downvotes, performing comment content analysis using OpenAI, Anthropic, or Groq LLMs, conducting comparative analysis between highest and lowest rated comments, and providing quantitative scoring on a 0-10 scale.
+- **Sentiment Analysis**: Evaluates community consensus and disagreement by analyzing explicit user feedback through upvotes/downvotes, performing comment content analysis using OpenAI, Anthropic, or Gemini LLMs, conducting comparative analysis between highest and lowest rated comments, and providing quantitative scoring on a 0-10 scale.
 - **Data Visualizations**: Creates the following five data visualizations using Matplotlib and Seaborn:
   1. **Most Upvoted Comments Bar Chart**: Shows the distribution of positive ratings for the most highly rated comments in descending order.
   2. **Most Downvoted Comments Bar Chart**: Displays the distribution of negative ratings for the most poorly rated comments in descending order.
@@ -43,16 +43,16 @@ pip install -r requirements.txt
 ```
 
 ### Step 3: Configure Environment Variables
-The script relies on API keys for OpenAI, Anthropic, and Groq services, managed securely through a `.env` file.
+The script relies on API keys for OpenAI, Anthropic, and Gemini services, managed securely through a `.env` file.
 
 #### 3.1 Create a .env File
 Create a `.env` file in the root directory with the following format:
 ```
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
-GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_Gemini_api_key
 ```
-Replace `your_openai_api_key`, `your_anthropic_api_key`, or `your_groq_api_key` with your actual API credentials. Anthropic and Groq API keys are not required, but an OpenAI key is required.
+Replace `your_openai_api_key`, `your_anthropic_api_key`, or `your_Gemini_api_key` with your actual API credentials. Anthropic and Gemini API keys are not required, but an OpenAI key is required.
 
 #### 3.2 Load Environment Variables
 The script automatically loads these values using the `dotenv` library:
@@ -77,7 +77,7 @@ python girlsinsight.v1.0.1.py
    - The script validates the URL and retrieves the corresponding comments for analysis.
    - Specify:
      - Language for output: Japanese (1) or English (2).
-     - AI Model for Summarization: OpenAI, Anthropic, or Groq.
+     - AI Model for Summarization: OpenAI, Anthropic, or Gemini.
 
 2. **Option 2: Search by Keyword**
    - Enter a search term: 検索キーワードを入力ください: 
@@ -89,8 +89,8 @@ python girlsinsight.v1.0.1.py
    - The script constructs a search URL, retrieves topic links, and analyzes matching results.
    - Specify:
      - Language for output: Japanese (1) or English (2).
-     - AI Model for Summarization: OpenAI, Anthropic, or Groq.
-     - AI Model for Sentiment Analysis: OpenAI, Anthropic, or Groq.
+     - AI Model for Summarization: OpenAI, Anthropic, or Gemini.
+     - AI Model for Sentiment Analysis: OpenAI, Anthropic, or Gemini.
 
 3. **Option 3: Help or Quit**
    - Quit the script or request additional help.
@@ -139,7 +139,7 @@ Here’s an example of what the `.env` file should look like:
 ```
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
-GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_Gemini_api_key
 ```
 
 ---
@@ -147,7 +147,7 @@ GROQ_API_KEY=your_groq_api_key
 ## Troubleshooting
 
 1. **Missing Dependencies**: Run `pip install -r requirements.txt` to ensure all dependencies are installed.
-2. **API Key Issues**: Verify your `.env` file contains valid API keys. Ensure your account has access to the OpenAI, Anthropic, or Groq APIs.
+2. **API Key Issues**: Verify your `.env` file contains valid API keys. Ensure your account has access to the OpenAI, Anthropic, or Gemini APIs.
 3. **Scraping Errors**: Check that GirlsChannel.net is accessible and functional. Update the scraping logic if the website layout changes.
 
 ---
