@@ -11,7 +11,7 @@ karlin@iii.u-tokyo.ac.jp
 
 from openai import OpenAI
 import anthropic
-from groq import Groq
+import google.generativeai as genai  # Add this import
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -33,13 +33,17 @@ from matplotlib.colors import LinearSegmentedColormap
 import seaborn as sns
 from urllib.parse import quote_plus
 import warnings
+import logging
+import os
 
+# Suppress only specific warnings while keeping important messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
 os.environ['IMK_DISABLE_LOGGING'] = '1'
+os.environ['GRPC_ENABLE_FORK_SUPPORT'] = '0'
 
-# Add these lines near the top of your script, before setting the locale
-f = open(os.devnull, 'w')
-sys.stderr = f
+# Suppress Google API client messages
+logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
+logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
 
 # Get the current date and time
 current_datetime = dt.now()
@@ -60,10 +64,8 @@ client_gpt = OpenAI(
 client_anthropic = anthropic.Anthropic(
   api_key=os.environ['ANTHROPIC_API_KEY'],
 )
-
-client = Groq(
-    api_key=os.environ.get("GROQ_API_KEY"),
-)
+genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
+client_gemini = genai.GenerativeModel('gemini-2.0-flash-exp')
 
 # Get the directory of the current script
 directory_path = os.path.dirname(os.path.realpath(__file__))
@@ -110,14 +112,14 @@ def get_user_input():
                             print("無効な選択です。1または2を入力してください。")
                     
                     while True:
-                        summary_ai = input("\nAIを選択してください (要約)： 1. OpenAI 2. Anthropic 3. Groq： ")
+                        summary_ai = input("\nAIを選択してください (要約)： 1. OpenAI 2. Anthropic 3. Gemini： ")
                         if summary_ai in ['1', '2', '3']:
                             break
                         else:
                             print("無効な選択です。1、2、または3を入力してください。")
                     
                     while True:
-                        sentiment_ai = input("\nAIを選択してください (感情分析)： 1. OpenAI 2. Anthropic 3. Groq： ")
+                        sentiment_ai = input("\nAIを選択してください (感情分析)： 1. OpenAI 2. Anthropic 3. Gemini： ")
                         if sentiment_ai in ['1', '2', '3']:
                             break
                         else:
@@ -129,7 +131,7 @@ def get_user_input():
                     elif summary_ai == '2':
                         summary_ai = 'anthropic'
                     elif summary_ai == '3':
-                        summary_ai = 'groq'
+                        summary_ai = 'gemini'
                     
                     # Assign respective values based on user input for sentiment AI
                     if sentiment_ai == '1':
@@ -137,7 +139,7 @@ def get_user_input():
                     elif sentiment_ai == '2':
                         sentiment_ai = 'anthropic'
                     elif sentiment_ai == '3':
-                        sentiment_ai = 'groq'
+                        sentiment_ai = 'gemini'
                     
                     return menu_choice, url, language_selection, comment_total, summary_ai, sentiment_ai
                 else:
@@ -171,14 +173,14 @@ def get_user_input():
                                         print("無効な選択です。1または2を入力してください。")
                                 
                                 while True:
-                                    summary_ai = input("\nAIを選択してください (要約)： 1. OpenAI 2. Anthropic 3. Groq： ")
+                                    summary_ai = input("\nAIを選択してください (要約)： 1. OpenAI 2. Anthropic 3. Gemini： ")
                                     if summary_ai in ['1', '2', '3']:
                                         break
                                     else:
                                         print("無効な選択です。1、2、または3を入力してください。")
                                 
                                 while True:
-                                    sentiment_ai = input("\nAIを選択してください (感情分析)： 1. OpenAI 2. Anthropic 3. Groq： ")
+                                    sentiment_ai = input("\nAIを選択してください (感情分析)： 1. OpenAI 2. Anthropic 3. Gemini： ")
                                     if sentiment_ai in ['1', '2', '3']:
                                         break
                                     else:
@@ -190,7 +192,7 @@ def get_user_input():
                                 elif summary_ai == '2':
                                     summary_ai = 'anthropic'
                                 elif summary_ai == '3':
-                                    summary_ai = 'groq'
+                                    summary_ai = 'gemini'
                                 
                                 # Assign respective values based on user input for sentiment AI
                                 if sentiment_ai == '1':
@@ -198,7 +200,7 @@ def get_user_input():
                                 elif sentiment_ai == '2':
                                     sentiment_ai = 'anthropic'
                                 elif sentiment_ai == '3':
-                                    sentiment_ai = 'groq'
+                                    sentiment_ai = 'gemini'
                                 
                                 return menu_choice, search_query, topic_urls, comment_totals, num_topics_found, language_selection, summary_ai, sentiment_ai
                             elif proceed.lower() == 'n':
@@ -297,13 +299,16 @@ def create_url_list(url_to_process):
         try:
             page_source = get_page_source(gc_url)
             next_page_url = get_nextpage_link(page_source)
+            
             if next_page_url != "null":
                 if next_page_url in all_urls:
+                    print("No additional pages found.")
                     break
                 else:
                     all_urls.append(next_page_url)
                     gc_url = next_page_url
             else:
+                print("Single page article detected.")
                 break
         except requests.ConnectionError:
             print(f"\nConnectionError encountered. \nTrying to find {gc_url} on the Wayback Machine...")
@@ -326,7 +331,10 @@ def create_url_list(url_to_process):
             else:
                 print("\nウェイバックマシンにアーカイブ版が見つかりませんでした。")
                 break
+    
     print("\nAll URLs scraped:", all_urls)
+    if len(all_urls) == 1:
+        print("Single page article confirmed - proceeding with processing...")
     return all_urls
 
 # Extract text from all URLs in the list
@@ -369,27 +377,37 @@ def check_news_story_status(url_to_process):
     )
     return response.choices[0].message.content.strip()
 
-# Summarize article using GROQ
-def summarize_article_with_groq(article_text, language_selection):
+# Summarize article using Gemini models
+import google.generativeai as genai
+
+def summarize_article_with_gemini(article_text, language_selection):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
-    response = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": f"You are an expert content creator with a knack for providing concise yet captivating summaries in {language}."
-            },
-            {
-                "role": "user",
-                "content": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instuctions in your response.",
-            }
-        ],
-        model="llama-3.1-70b-versatile",
-        max_tokens=2048,
-    )
-    return response.choices[0].message.content
+    
+    # Initialize the model
+    model = genai.GenerativeModel('models/gemini-2.0-flash-exp')
+    
+    # Create the prompt
+    prompt = f"""You are an expert content creator specializing in {language} summaries.
 
-# Summarize article using OpenAI's GPT-4
+In {language}, please provide a detailed and engaging summary of the following:
+
+{article_text}
+
+In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instructions in your response."""
+
+    # Generate response
+    response = model.generate_content(
+        prompt,
+        generation_config=genai.GenerationConfig(
+            max_output_tokens=2048,
+            temperature=0.7,
+        )
+    )
+    
+    return response.text
+
+# Summarize article using OpenAI models
 def summarize_article_with_gpt(article_text, language_selection):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
@@ -402,7 +420,7 @@ def summarize_article_with_gpt(article_text, language_selection):
     )
     return response.choices[0].message.content
 
-# Summarize article using Anthropic's Claude AI
+# Summarize article using Anthropic models
 def summarize_article_with_anthropic(article_text, language_selection):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
@@ -426,7 +444,7 @@ def summarize_article_with_anthropic(article_text, language_selection):
     )
     return message.content[0].text
 
-# Summarize topic using OpenAI's GPT-4
+# Summarize topic using OpenAI models
 def summarize_topic_with_gpt(topcomment_text, language_selection):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
@@ -439,7 +457,7 @@ def summarize_topic_with_gpt(topcomment_text, language_selection):
     )
     return response.choices[0].message.content
 
-# Summarize topic using Anthropic's Claude AI
+# Summarize topic using Anthropic models
 def summarize_topic_with_anthropic(topcomment_text, language_selection):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
@@ -463,45 +481,72 @@ def summarize_topic_with_anthropic(topcomment_text, language_selection):
     )
     return message.content[0].text
 
-# Summarize topic using GROQ
-def summarize_topic_with_groq(topcomment_text, language_selection):
+# Summarize topic using Gemini models
+import google.generativeai as genai
+
+def summarize_topic_with_gemini(topcomment_text, language_selection):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
-    response = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": f"You are a social media analyst who excels at explaining the meaning of posts in {language}."
-            },
-            {
-                "role": "user",
-                "content": f"In {language}, please explain the overall meaning and likely intent of the post, combining insights from its title, {header}, and the accompanying comment, {topcomment_text}. Avoid restating the title and comment or using introductory phrases.",
-            }
-        ],
-        model="llama-3.1-70b-versatile",
-        max_tokens=2048,
-    )
-    return response.choices[0].message.content
+    
+    # Initialize the model
+    model = genai.GenerativeModel('models/gemini-2.0-flash-exp')
+    
+    # Create the prompt
+    prompt = f"""You are a social media analyst specializing in {language} content analysis.
 
-def evaluate_sentiment_with_groq(search_query, highest_sentiment_comments, lowest_sentiment_comments, language_selection, comments_to_analyze):
+In {language}, please explain the overall meaning and likely intent of the post, combining insights from its title:
+{header}
+
+And the accompanying comment:
+{topcomment_text}
+
+Provide a clear, concise analysis that focuses on the overall meaning and likely intent. Avoid restating the title and comment directly and do not use introductory phrases."""
+
+    # Generate response
+    response = model.generate_content(
+        prompt,
+        generation_config=genai.GenerationConfig(
+            max_output_tokens=1024,
+            temperature=0.7,
+        )
+    )
+    
+    return response.text
+
+def evaluate_sentiment_with_gemini(search_query, highest_sentiment_comments, 
+                                 lowest_sentiment_comments, language_selection, 
+                                 comments_to_analyze):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
-    response = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": f"You are a helpful Japanese assistant trained to analyze comments from the online forum GirlsChannel.net related to {search_query} and evaluate the sentiments of the users in {language}."
-            },
-            {
-                "role": "user",
-                "content": f"In {language}, provide a comprehensive analysis and summary of the overall sentiment on {search_query} based on the following dataset aggregated from GirlsChannel.net. This dataset includes the {comments_to_analyze} most upvoted comments {highest_sentiment_comments} alongside the {comments_to_analyze} most downvoted comments {lowest_sentiment_comments}, reflecting the community's overall sentiment and opinion. Since the {lowest_sentiment_comments} have been voted down by users, you should interpret the prevailing opinion or sentiment to be in strong disagreement with the {lowest_sentiment_comments}. Evaluate these two sets of comments together, and then integrate the sentiments and themes they express to discern the collective opinion on {search_query}. Focus on the predominant emotions, attitudes, and topics to understand what aspects of {search_query} that resonate most with the GirlsChannel.net online community. Provide a detailed summary of the prevailing sentiment, encapsulating the community's stance on {search_query}. Aim to offer a nuanced perspective on the community's overall sentiment, highlighting the majority opinion while also considering dissenting views. Your analysis should be approximately 500 words in length. Comments: {highest_sentiment_comments} {lowest_sentiment_comments}\n. At the end of the essay, please evaluate the overall sentiment of the comments as either positive, neutral, or negative; and assign a sentiment score from 0-10, with 0 being highly negative and 10 being highly positive. Provide your analysis in the following format:\n\nSentiment: <positive/neutral/negative>\nScore: <0-10>",
-            }
-        ],
-        model="llama-3.1-70b-versatile",
-        max_tokens=4000,
-    )
-    return response.choices[0].message.content
+    
+    # Initialize the model inside the function
+    model = genai.GenerativeModel('models/gemini-2.0-flash-exp')
+    
+    # Create the prompt
+    system_prompt = f"""You are a helpful Japanese assistant trained to analyze comments from the online forum GirlsChannel.net related to {search_query}. Your task is to write a comprehensive, cohesive essay in {language} that evaluates the sentiments expressed by the users. The essay should integrate the main themes, emotions, and attitudes present in the comments, providing a nuanced perspective on the overall community sentiment. Aim to write a well-structured essay of approximately 500 words, focusing on the predominant opinions while also considering dissenting views. The essay should flow smoothly, without being divided into distinct sections.
 
+In {language}, please write a comprehensive, cohesive essay of approximately 500 words analyzing and summarizing the overall sentiment on {search_query} based on the following dataset aggregated from GirlsChannel.net. The dataset includes the {comments_to_analyze} most upvoted comments {highest_sentiment_comments} alongside the {comments_to_analyze} most downvoted comments {lowest_sentiment_comments}, reflecting the community's overall sentiment and opinion. Since the {lowest_sentiment_comments} have been voted down by users, interpret the prevailing opinion or sentiment to be in strong disagreement with those comments.
+
+Your essay should flow smoothly from one idea to the next, without distinct sections or headers. Evaluate the upvoted and downvoted comments together, integrating the sentiments and themes they express to discern the collective opinion on {search_query}. Focus on the predominant emotions, attitudes, and topics to understand what aspects of {search_query} resonate most with the GirlsChannel.net online community.
+
+Address the main themes or topics that emerge from the comments, the prevailing emotions and attitudes expressed by the community, how the most upvoted and downvoted comments differ in their sentiments, any notable quotes or specific comments that encapsulate the overall sentiment, and how the sociocultural context of the Japanese social media environment might influence the way sentiments are expressed and received in relation to {search_query}.
+
+Provide a nuanced perspective on the overall community sentiment, highlighting the majority opinion while also considering dissenting views. The essay should be a well-structured, cohesive piece that flows logically from one point to the next.
+
+Comments:
+{highest_sentiment_comments}
+{lowest_sentiment_comments}
+
+At the end of the essay, please evaluate the overall sentiment of the comments as either positive, neutral, or negative; and assign a sentiment score from 0-10, with 0 being highly negative and 10 being highly positive. Provide your analysis in the following format:
+
+Sentiment: <positive/neutral/negative>
+Score: <0-10>"""
+
+    # Generate response
+    response = model.generate_content(system_prompt)
+    return response.text
+
+# Evaluate comment sentiment using OpenAI models
 def evaluate_sentiment_with_gpt(search_query, highest_sentiment_comments, lowest_sentiment_comments, language_selection, comments_to_analyze):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
@@ -515,7 +560,7 @@ def evaluate_sentiment_with_gpt(search_query, highest_sentiment_comments, lowest
     return response.choices[0].message.content
 
 
-# Evaluate comment sentiment using Anthropic's Claude AI
+# Evaluate comment sentiment using Anthropic models
 def evaluate_sentiment_with_anthropic(search_query, highest_sentiment_comments, lowest_sentiment_comments, language_selection, comments_to_analyze):
     language_options = {"1": "Japanese", "2": "English"}
     language = language_options.get(language_selection, "")
@@ -540,6 +585,14 @@ def evaluate_sentiment_with_anthropic(search_query, highest_sentiment_comments, 
         ]
     )
     return message.content[0].text
+
+# Force cleanup of gRPC resources
+def cleanup():
+    try:
+        import grpc
+        grpc.shutdown()
+    except:
+        pass
 
 # Function to sanitize search query term or URL
 def sanitize_filename(filename, menu_choice):
@@ -1144,7 +1197,7 @@ if __name__ == "__main__":
     
         # Define group_df for the current comment group
         group_df = df.iloc[start_index:i+1]  # Include the current row in the group
-
+        print('')
         print(f"\nトピック {i+1}:", file=output_file)
         print(f"{header}", file=output_file)
         print('')
@@ -1311,5 +1364,7 @@ if __name__ == "__main__":
 # Print the date and time
 print("GirlsinSight v1.0.1", file=output_file)
 print("作成日時：" + formatted_datetime, file=output_file)
+
 # Close the output file
 output_file.close()
+time.sleep(1)  # Add a small delay before script termination
