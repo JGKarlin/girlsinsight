@@ -50,7 +50,7 @@ Create a `.env` file in the root directory with the following format:
 ```
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
-GEMINI_API_KEY=your_Gemini_api_key
+GEMINI_API_KEY=your_gemini_api_key
 ```
 Replace `your_openai_api_key`, `your_anthropic_api_key`, or `your_Gemini_api_key` with your actual API credentials. Anthropic and Gemini API keys are not required, but an OpenAI key is required.
 
@@ -139,7 +139,7 @@ Here’s an example of what the `.env` file should look like:
 ```
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
-GEMINI_API_KEY=your_Gemini_api_key
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 ---
