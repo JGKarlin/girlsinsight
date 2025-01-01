@@ -357,10 +357,31 @@ def get_nextpage_link(page_source):
     response = client_gpt.chat.completions.create(
         model="gpt-4o-mini",
         max_tokens=500,
+        temperature=0.2,  # Add temperature for more consistent results
         messages=[
-            {"role": "system", "content": "You are an HTML parser. Respond ONLY with a URL or 'null'."},
-            {"role": "user", "content": f"Please analyze the following HTML to determine 1) if there is a link to the 'full text' of the article, and then respond with just the link to the 記事全文; or 2) if the news story is multipaged or paginated, then respond with only the full URL for the next page of the same article and not the next article. Specifically, look for indicators such as classes or IDs containing keywords like 'next', 'next-page', '次', or '続き'; and elements that indicate pagination, such as navigation arrows. If there is no next page url, then respond with only the word 'null'. HTML Content: {page_source}."}
-        ],
+            {
+                "role": "system", 
+                "content": "You are an HTML parser that extracts 'full text' or 'next page' URLs from HTML content. Return only the URL or 'null'."
+            },
+            {
+                "role": "user", 
+                "content": f"""Analyze this HTML and return either:
+1. A 'full text' URL (if found)
+2. A 'next page' URL (if found)
+3. The word 'null' (if neither found)
+
+Look for:
+- Full text links with text/attributes like 'full text' or '記事全文'
+- Pagination links with text/attributes like 'next', 'next-page', '次', '続き'
+- Navigation arrows or sequential numbers indicating pagination
+
+For relative URLs:
+- If starts with '/', append to base domain
+- Otherwise resolve against current page URL
+
+HTML content: {page_source}"""
+            }
+        ]
     )
     return response.choices[0].message.content.strip()
 
