@@ -359,7 +359,7 @@ def get_nextpage_link(page_source):
         max_tokens=500,
         messages=[
             {"role": "system", "content": "You are an HTML parser. Respond ONLY with a URL or 'null'."},
-            {"role": "user", "content": f"Please analyze the following HTML to determine 1) if there is a link to the 'full text' of the article, and then respond with just the link to the 記事全文; or 2) if the news story is multipaged or paginated, then respond with only the full URL for the next page of the same article and not the next article. Specifically, look for indicators such as classes or IDs containing keywords like 'next', '次', or '続き'; and elements that indicate pagination, such as navigation arrows. If there is no next page url, then respond with only the word 'null'. HTML Content: {page_source}."}
+            {"role": "user", "content": f"Please analyze the following HTML to determine 1) if there is a link to the 'full text' of the article, and then respond with just the link to the 記事全文; or 2) if the news story is multipaged or paginated, then respond with only the full URL for the next page of the same article and not the next article. Specifically, look for indicators such as classes or IDs containing keywords like 'next', 'next-page', '次', or '続き'; and elements that indicate pagination, such as navigation arrows. If there is no next page url, then respond with only the word 'null'. HTML Content: {page_source}."}
         ],
     )
     return response.choices[0].message.content.strip()
