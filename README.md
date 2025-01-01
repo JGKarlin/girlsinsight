@@ -11,7 +11,7 @@ For detailed information about the technical implementation and methodology, ple
 The recommended way to use GirlsInsight is through Google Colab, which provides a ready-to-use environment with all dependencies pre-installed and asynchronous processing capabilities for optimal web scraping performance.
 
 ### Step 1: Access the Notebook
-Open the GirlsInsight Jupyter notebook in Google Colab by clicking this link: [GirlsInsight Colab Notebook](https://colab.research.google.com/github/JGKarlin/girlsinsight/blob/main/girlsinsight_v1_0_1.ipynb)
+Open the GirlsInsight Jupyter notebook in Google Colab by clicking this link: [GirlsInsight Colab Notebook](https://colab.research.google.com/github/JGKarlin/girlsinsight/blob/main/girlsinsight.v1.0.1.ipynb)
 
 ### Step 2: Set Up Gemini API
 1. Visit the [Gemini AI API Key Page](https://aistudio.google.com/app/apikey)
