@@ -127,7 +127,7 @@ girlsinsight/
 ├── methodology.md               # Technical implementation details
 ├── .env                          # Environment variables
 ├── outputs/                      # Generated outputs
-│   ├── comments_<query>.xlsx     # Detailed comment data
+│   ├── comments_<query>.xlsx     # Scraped comment data
 │   ├── plot_<query>.png         # Bar charts and pie chart
 │   ├── lineplot_<query>.png     # Comment frequency over time
 │   ├── output_<query>.txt       # Analysis summaries
