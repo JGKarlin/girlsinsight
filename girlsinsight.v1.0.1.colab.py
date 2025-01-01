@@ -70,7 +70,7 @@ except:
     client_gpt = None
 
 try:
-    client_anthropic = anthropic.Anthropic(
+    client_anthropic = anthropic.Client(
         api_key=userdata.get('ANTHROPIC_API_KEY')
     )
 except:
@@ -1573,6 +1573,7 @@ if __name__ == "__main__":
         print(f"　不一致の度合: {lowest_score:.2f}\n", file=output_file)
         evaluation = globals()[f"evaluate_sentiment_with_{sentiment_ai}"](search_query, highest_sentiment_comments, lowest_sentiment_comments, language_selection, comments_to_analyze)
         print("評価:", file=output_file)
+        print()
         print("評価:")
         print(evaluation, file=output_file)
         print(evaluation)
