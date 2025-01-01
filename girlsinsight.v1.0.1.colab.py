@@ -417,11 +417,33 @@ def get_nextpage_link(page_source):
     model = genai.GenerativeModel('models/gemini-2.0-flash-exp')
     
     # Create the prompt
-    prompt = f"""You are an HTML parser. Respond ONLY with a URL or 'null'.
+    prompt = f"""You are an advanced HTML parser tasked with extracting specific URLs from HTML content. Your primary goal is to find either a 'full text' link or a 'next page' link for an article. Please follow these steps to analyze the HTML and extract the required URL:
 
-Please analyze the following HTML to determine 1) if there is a link to the 'full text' of the article, and then respond with just the link to the 記事全文; or 2) if the news story is multipaged or paginated, then respond with only the full URL for the next page of the same article and not the next article. Specifically, look for indicators such as classes or IDs containing keywords like 'next', '次', or '続き'; and elements that indicate pagination, such as navigation arrows. If there is no next page url, then respond with only the word 'null'.
+1. Search for a 'full text' link:
+   - Look for links containing text or attributes related to 'full text' or '記事全文' (Japanese for 'full text of the article').
+   - If found, this link takes priority over any pagination links.
 
-HTML Content: {page_source}"""
+2. If no 'full text' link is found, check for pagination:
+   - Look for elements indicating that the article is split across multiple pages.
+   - Search for classes or IDs containing keywords like 'next', 'next-page', '次', or '続き'.
+   - Also, check for navigation arrows or sequential numbers that might indicate pagination.
+
+3. If neither a 'full text' link nor pagination is found, prepare to return 'null'.
+
+4. URL Handling:
+   - For any found URL, check if it's a relative URL (starts with '/' or doesn't contain 'http').
+   - If it's a relative URL, combine it with the base URL using the following rules:
+     a. If the URL starts with '/', append it to the base domain
+     b. If the URL is relative to the current path, resolve it against the current page URL
+   - Always return a complete, absolute URL
+
+Output Format:
+After your analysis, provide **only** one of the following:
+1. The URL of the 'full text' link (if found)
+2. The URL of the 'next page' link (if pagination is found)
+3. The word 'null' (if neither is found)
+
+Here is the HTML content you need to analyze: {page_source}"""
 
     # Generate response
     response = model.generate_content(
@@ -1014,14 +1036,10 @@ async def fetch_and_process_page(url, worksheet, comment_total, session=None):
     """
     Asynchronously fetch and process a webpage, extracting comments and related data.
     """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Referer': 'https://www.google.com/'
-    }
+    # Add total_processed as a parameter to track progress across pages
+    global total_processed
+    if not hasattr(fetch_and_process_page, 'total_processed'):
+        fetch_and_process_page.total_processed = 0
 
     try:
         if session is None:
@@ -1051,9 +1069,10 @@ async def _process_page(session, url, worksheet, comment_total, headers):
                 
             header = header_div.find('h1').text.strip()
             
-            # Only print title and total once at the start
-            if url.endswith('/topics/') or not url.split('/')[-1].isdigit():
-                print(f"\r記事タイトル: {header} (コメント数: {comment_total})", end='', flush=True)
+            # Only print title and total once, and store it in a static variable
+            if not hasattr(_process_page, 'title_printed'):
+                _process_page.title_printed = True
+                print(f"\n記事タイトル: {header} (コメント数: {comment_total})")
 
             comments = soup.find_all('li', class_='comment-item')
             if not comments:
@@ -1110,11 +1129,11 @@ async def _process_page(session, url, worksheet, comment_total, headers):
                     else:
                         worksheet.append([comment_number_formatted, date, wrap_plus, wrap_minus, wrap_total, comment_body, sub_comments, ''])
                     
-                    # Update progress inline
+                    # Update progress without reprinting the title
                     processed_count += 1
                     total_processed = int(comment_number) if comment_number else processed_count
                     progress = (total_processed / comment_total) * 100
-                    print(f"\rコメント処理中: {total_processed}/{comment_total} ({progress:.1f}%)", end='', flush=True)
+                    print(f"\rコメント処理中: {total_processed}/{comment_total} ({progress:.1f}%)", end='')
                     
                 except Exception as e:
                     print(f"\nError processing comment {processed_count}: {str(e)}")
