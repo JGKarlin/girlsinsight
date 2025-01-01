@@ -36,6 +36,11 @@ import logging
 import os
 from google.colab import userdata
 import subprocess
+import asyncio
+import aiohttp
+import nest_asyncio
+
+os.environ["LANG"] = "ja_JP.UTF-8"
 
 # Suppress only specific warnings while keeping important messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -45,8 +50,6 @@ os.environ['GRPC_ENABLE_FORK_SUPPORT'] = '0'
 # Suppress Google API client messages
 logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
-
-os.environ["LANG"] = "ja_JP.UTF-8"
 
 # Get the current date and time
 current_datetime = datetime.datetime.now()
@@ -996,139 +999,249 @@ def plot_comment_frequency(df, output_folder, sanitized_query, dates):
 
     plt.savefig(output_plot_lineplot, dpi=300, bbox_inches='tight')
     plt.show()
-    
-def fetch_and_process_page(url, worksheet, comment_total):
-    # Fetch the web page content
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    header = soup.find('div', class_='head-area').find('h1').text.strip()
 
-    # Find all comment items
-    comments = soup.find_all('li', class_='comment-item')
-    for comment in comments:
-        # Extract required information
-        comment_number = comment.find('p', class_='info').get_text(strip=True).split('.')[0]
-        date = comment.find('a', rel='nofollow').get_text(strip=True)
-        
-        # Remove the Japanese weekday name from the date string
-        date = re.sub(r'\(.*?\)', '', date)
-        # Parse the date string into a datetime object
-        date = datetime.datetime.strptime(date, '%Y/%m/%d %H:%M:%S')
-        
-        wrap_plus = comment.find('div', class_='icon-rate-wrap-plus').find('p').get_text(strip=True)
-        wrap_minus = comment.find('div', class_='icon-rate-wrap-minus').find('p').get_text(strip=True)
-        wrap_total = int(wrap_plus) + int(wrap_minus)  # Calculate the total by converting to integers
+async def process_url(url, worksheet, comment_total):
+    async with aiohttp.ClientSession() as session:
+        while url:
+            new_url, header, comment_number = await fetch_and_process_page(url, worksheet, comment_total, session)
+            if not new_url or new_url == url:  # Prevent infinite loop
+                break
+            url = new_url
+            await asyncio.sleep(1)  # Add a delay between requests
+    return header, comment_number
 
-        # Find the comment body
-        body_div = comment.find('div', class_='body')
-        # Remove the <span class="res-anchor"> tags and their content
-        for span in body_div.find_all('span', class_='res-anchor'):
-            span.decompose()
-        # Get the cleaned text content
-        comment_body = body_div.get_text(strip=True, separator=' ').replace('\n', ' ')
+async def fetch_and_process_page(url, worksheet, comment_total, session=None):
+    """
+    Asynchronously fetch and process a webpage, extracting comments and related data.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Referer': 'https://www.google.com/'
+    }
 
-        # Check if the comment body is NaN, empty, or starts with "出典"
-        if pd.isna(comment_body) or not comment_body.strip() or comment_body.startswith("出典"):
-            # Find the image URL using the provided selector
-            img_tag = body_div.select_one('div > img')
-            if img_tag and 'data-src' in img_tag.attrs:
-                img_url = img_tag['data-src']
-                comment_body = str(img_url)  # Convert the URL to a string
-            else:
-                comment_body = '「画像のURLが見分けられない。」'
-
-        res_count_element = comment.find('div', class_='res-count')
-        res_count_url = res_count_element.find('a')['href'] if res_count_element else None
-
-        # Find the URL(s) in the "comment-url-title" div
-        sub_comments = ""
-        comment_url_title_div = comment.find('div', class_='comment-url-title')
-        if comment_url_title_div:
-            urls = set([a['href'] for a in comment_url_title_div.find_all('a', href=True)])
-            if urls:
-                sub_comments = '\n'.join(urls)
-
-        # Clean the text of comment number 1 by removing "出典：" and the text after it
-        if comment_number == '1':
-            comment_body = re.sub(r'出典：.*?(?=\s|$)', '', comment_body)
-            # Update the header when a new comment group starts
-            header = soup.find('div', class_='head-area').find('h1').text.strip()
-
-        # Use a fixed-width numbering scheme with leading zeros for the main comment number
-        comment_number_formatted = comment_number.zfill(4)
-
-        # Write the comment data to the worksheet
-        if comment_number == '1':
-            worksheet.append([comment_number_formatted, date, wrap_plus, wrap_minus, wrap_total, comment_body, sub_comments, header])
+    try:
+        if session is None:
+            async with aiohttp.ClientSession() as session:
+                return await _process_page(session, url, worksheet, comment_total, headers)
         else:
-            worksheet.append([comment_number_formatted, date, wrap_plus, wrap_minus, wrap_total, comment_body, sub_comments, ''])
-            print(f"\r{comment_number}/{comment_total}のコメント", end="", flush=True)
+            return await _process_page(session, url, worksheet, comment_total, headers)
+    except Exception as e:
+        print(f"\nError in fetch_and_process_page: {str(e)}")
+        return None, None, None
 
-        # Initialize subcomment counter
-        subcomment_counter = 1
+async def _process_page(session, url, worksheet, comment_total, headers):
+    """Helper function to process a single page"""
+    try:
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                print(f"\nError: HTTP {response.status} when accessing {url}")
+                return None, None, None
 
-        # Scrape additional comments from the "res-count" URL if it exists
-        if res_count_url:
-            base_url = "https://girlschannel.net"  # Define the base URL
-            res_count_full_url = urljoin(base_url, res_count_url)  # Combine the base URL with the "res-count" URL
-            res_count_response = requests.get(res_count_full_url, headers=headers)
-            res_count_soup = BeautifulSoup(res_count_response.content, 'html.parser')
+            content = await response.text()
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            header_div = soup.find('div', class_='head-area')
+            if not header_div or not header_div.find('h1'):
+                print("\nError: Could not find article header")
+                return None, None, None
+                
+            header = header_div.find('h1').text.strip()
+            
+            # Only print title and total once at the start
+            if url.endswith('/topics/') or not url.split('/')[-1].isdigit():
+                print(f"\r記事タイトル: {header} (コメント数: {comment_total})", end='', flush=True)
+
+            comments = soup.find_all('li', class_='comment-item')
+            if not comments:
+                print("\nError: No comments found")
+                return None, None, None
+
+            comment_number = None
+            processed_count = 0
+            
+            for comment in comments:
+                try:
+                    comment_number = comment.find('p', class_='info').get_text(strip=True).split('.')[0]
+                    processed_count += 1
+                    
+                    # Process comment data
+                    date = comment.find('a', rel='nofollow').get_text(strip=True)
+                    date = re.sub(r'\(.*?\)', '', date)
+                    date = datetime.datetime.strptime(date, '%Y/%m/%d %H:%M:%S')
+                    
+                    wrap_plus = comment.find('div', class_='icon-rate-wrap-plus').find('p').get_text(strip=True)
+                    wrap_minus = comment.find('div', class_='icon-rate-wrap-minus').find('p').get_text(strip=True)
+                    wrap_total = int(wrap_plus) + int(wrap_minus)
+
+                    # Process comment body
+                    body_div = comment.find('div', class_='body')
+                    for span in body_div.find_all('span', class_='res-anchor'):
+                        span.decompose()
+                    comment_body = body_div.get_text(strip=True, separator=' ').replace('\n', ' ')
+
+                    if not comment_body.strip() or comment_body.startswith("出典"):
+                        img_tag = body_div.select_one('div > img')
+                        if img_tag and 'data-src' in img_tag.attrs:
+                            comment_body = str(img_tag['data-src'])
+                        else:
+                            comment_body = '「画像のURLが見分けられない。」'
+
+                    # Process sub-comments
+                    sub_comments = ""
+                    comment_url_title_div = comment.find('div', class_='comment-url-title')
+                    if comment_url_title_div:
+                        urls = set([a['href'] for a in comment_url_title_div.find_all('a', href=True)])
+                        if urls:
+                            sub_comments = '\n'.join(urls)
+
+                    # Clean comment number 1
+                    if comment_number == '1':
+                        comment_body = re.sub(r'出典：.*?(?=\s|$)', '', comment_body)
+
+                    comment_number_formatted = comment_number.zfill(4)
+
+                    # Write to worksheet
+                    if comment_number == '1':
+                        worksheet.append([comment_number_formatted, date, wrap_plus, wrap_minus, wrap_total, comment_body, sub_comments, header])
+                    else:
+                        worksheet.append([comment_number_formatted, date, wrap_plus, wrap_minus, wrap_total, comment_body, sub_comments, ''])
+                    
+                    # Update progress inline
+                    processed_count += 1
+                    total_processed = int(comment_number) if comment_number else processed_count
+                    progress = (total_processed / comment_total) * 100
+                    print(f"\rコメント処理中: {total_processed}/{comment_total} ({progress:.1f}%)", end='', flush=True)
+                    
+                except Exception as e:
+                    print(f"\nError processing comment {processed_count}: {str(e)}")
+                    continue
+
+            # Look for next page without printing message
+            next_page_url = None
+            pager_area = soup.find('ul', class_='pager-topic')
+            if pager_area:
+                next_page_link = pager_area.find('li', class_='next')
+                if next_page_link and next_page_link.find('a'):
+                    next_page_url = urljoin(url, next_page_link.find('a')['href'])
+
+            return next_page_url, header, comment_number
+
+    except Exception as e:
+        print(f"\nError processing page {url}: {str(e)}")
+        return None, None, None
+
+async def process_additional_comments(res_count_url, parent_comment_number, worksheet, session):
+    """
+    Process additional comments asynchronously
+    """
+    base_url = "https://girlschannel.net"
+    res_count_full_url = urljoin(base_url, res_count_url)
+    
+    try:
+        async with session.get(res_count_full_url) as response:
+            content = await response.text()
+            res_count_soup = BeautifulSoup(content, 'html.parser')
             res_count_comments = res_count_soup.find_all('li', class_='comment-item')
 
-            # Skip the first comment from the "res-count" comments
             if len(res_count_comments) > 1:
                 res_count_comments = res_count_comments[1:]
+                subcomment_counter = 1
 
-            for res_count_comment in res_count_comments:
-                res_count_date = res_count_comment.find('a', rel='nofollow').get_text(strip=True)
+                for res_count_comment in res_count_comments:
+                    # Extract and process comment data
+                    res_count_date = res_count_comment.find('a', rel='nofollow').get_text(strip=True)
+                    res_count_date = re.sub(r'\(.*?\)', '', res_count_date)
+                    res_count_date = datetime.datetime.strptime(res_count_date, '%Y/%m/%d %H:%M:%S')
+                    
+                    res_count_wrap_plus = res_count_comment.find('div', class_='icon-rate-wrap-plus').find('p').get_text(strip=True)
+                    res_count_wrap_minus = res_count_comment.find('div', class_='icon-rate-wrap-minus').find('p').get_text(strip=True)
+                    res_count_sentiment = int(res_count_wrap_plus) + int(res_count_wrap_minus)
+
+                    body_div = res_count_comment.find('div', class_='body')
+                    for span in body_div.find_all('span', class_='res-anchor'):
+                        span.decompose()
+                    res_count_comment_body = body_div.get_text(strip=True)
+
+                    if not res_count_comment_body.strip() or res_count_comment_body.startswith("出典"):
+                        img_tag = body_div.select_one('div > img')
+                        if img_tag and 'data-src' in img_tag.attrs:
+                            res_count_comment_body = str(img_tag['data-src'])
+                        else:
+                            res_count_comment_body = '「画像のURLが見分けられない。」'
+
+                    subcomment_counter_formatted = str(subcomment_counter).zfill(3)
+                    worksheet.append([
+                        f"{parent_comment_number}.{subcomment_counter_formatted}", 
+                        res_count_date, 
+                        res_count_wrap_plus, 
+                        res_count_wrap_minus, 
+                        res_count_sentiment, 
+                        res_count_comment_body, 
+                        '', 
+                        ''
+                    ])
+                    subcomment_counter += 1
+
+    except Exception as e:
+        print(f"Error processing additional comments from {res_count_full_url}: {str(e)}")
+
+# Update the run_async function to use nest_asyncio
+import nest_asyncio
+nest_asyncio.apply()
+
+def run_async(coroutine):
+    """Helper function to run async code in any context."""
+    try:
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(coroutine)
+    except Exception as e:
+        print(f"Error in run_async: {str(e)}")
+        return None, None
+
+# Update the process_url function to be less verbose
+async def process_url(url, worksheet, comment_total):
+    """Process URL and return header and comment number"""
+    try:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            current_url = url
+            header = None
+            comment_number = None
+            
+            while current_url:
+                new_url, new_header, new_comment_number = await fetch_and_process_page(current_url, worksheet, comment_total, session)
                 
-                # Remove the Japanese weekday name from the date string
-                res_count_date = re.sub(r'\(.*?\)', '', res_count_date)
-                # Parse the date string into a datetime object
-                res_count_date = datetime.datetime.strptime(res_count_date, '%Y/%m/%d %H:%M:%S')
+                if new_header and header is None:
+                    header = new_header
+                if new_comment_number:
+                    comment_number = new_comment_number
                 
-                res_count_wrap_plus = res_count_comment.find('div', class_='icon-rate-wrap-plus').find('p').get_text(strip=True)
-                res_count_wrap_minus = res_count_comment.find('div', class_='icon-rate-wrap-minus').find('p').get_text(strip=True)
-                res_count_sentiment = int(res_count_wrap_plus) + int(res_count_wrap_minus)
+                if not new_url or new_url == current_url:
+                    break
+                    
+                current_url = new_url
+                await asyncio.sleep(1)
+            
+            return header, comment_number
+    except Exception as e:
+        print(f"\nError in process_url: {str(e)}")
+        return None, None
 
-                # Find the comment body
-                body_div = res_count_comment.find('div', class_='body')
-
-                # Remove the <span class="res-anchor"> tags and their content
-                for span in body_div.find_all('span', class_='res-anchor'):
-                    span.decompose()
-
-                # Get the cleaned text content
-                res_count_comment_body = body_div.get_text(strip=True)
-
-                # Check if the comment body is NaN, empty, or starts with "出典"
-                if pd.isna(res_count_comment_body) or not res_count_comment_body.strip() or res_count_comment_body.startswith("出典"):
-                    # Find the image URL
-                    img_tag = body_div.select_one('div > img')
-                    if img_tag and 'data-src' in img_tag.attrs:
-                        img_url = img_tag['data-src']
-                        res_count_comment_body = str(img_url)  # Convert the URL to a string
-                    else:
-                        res_count_comment_body = '「画像のURLが見分けられない。」'
-
-                # Use a fixed-width numbering scheme with leading zeros for the subcomment counter
-                subcomment_counter_formatted = str(subcomment_counter).zfill(3)
-
-                # Write the additional comment data to the worksheet with the updated numbering scheme
-                worksheet.append([f"{comment_number_formatted}.{subcomment_counter_formatted}", res_count_date, res_count_wrap_plus, res_count_wrap_minus, res_count_sentiment, res_count_comment_body, '', ''])
-                subcomment_counter += 1  # Increment the subcomment counter
-
-    # Look for the 'next' pagination link after processing all comments
-    next_page_url = None  # Initialize next_page_url to None
-    pager_area = soup.find('ul', class_='pager-topic')
-    if pager_area:
-        next_page_link = pager_area.find('li', class_='next')
-        if next_page_link and next_page_link.find('a'):
-            next_page_url = next_page_link.find('a')['href']
-            # Ensure the URL is absolute
-            next_page_url = urljoin(url, next_page_url)
-
-    return next_page_url, header, comment_number
+# Update the main function to be less verbose
+async def main(url, worksheet, comment_total):
+    """Main async function to handle URL processing"""
+    try:
+        print("\nコメントの取得を開始します...")
+        result = await process_url(url, worksheet, comment_total)
+        print("\n完了しました")
+        return result
+    except Exception as e:
+        print(f"\nError in main: {str(e)}")
+        return None, None
 
 if __name__ == "__main__":
     menu_choice, *args = get_user_input()
@@ -1138,7 +1251,7 @@ if __name__ == "__main__":
     
     if menu_choice == '1':
         url, language_selection, comment_total, summary_ai, sentiment_ai = args
-        sanitized_query = sanitize_filename(url, menu_choice)  # Sanitize the URL to be used in the file name
+        sanitized_query = sanitize_filename(url, menu_choice)
         output_file_name = os.path.join(output_folder, f"output_{sanitized_query}.txt")
         output_file = open(output_file_name, "w", encoding="utf-8")
         excel_file_name = os.path.join(output_folder, f"comments_{sanitized_query}.xlsx")
@@ -1147,24 +1260,26 @@ if __name__ == "__main__":
         print("\n*** GirlsinSight ***", file=output_file)
         print(f"\nURL: {url}", file=output_file)
         print(f"\n入力されたURL: {url}")
+        
         # Create a new worksheet for the current URL
         worksheet = workbook.create_sheet(title="Topic 1")
         
         # Write the header row to the worksheet
         worksheet.append(['Comment Number', 'Date', 'Plus', 'Minus', 'Total', 'Comment', 'URLs', 'Header'])
         
-        # Start scraping from the initial URL
-        while url:
-            new_url, header, comment_number = fetch_and_process_page(url, worksheet, comment_total)  # Fetch, process, and get next page URL and header
-            if not new_url or new_url == url:  # Prevent infinite loop if there's no next page or if the next page is the same
-                break
-            url = new_url
-            time.sleep(1)  # Add a delay of 1 second before fetching the next page
-        search_query = header  # Assign the header to search_query
-        
+        print("\nURLの処理を開始します...")
+        # Process the URL asynchronously
+        header, comment_number = run_async(main(url, worksheet, comment_total))
+        if header:
+            search_query = header
+            print(f"\n処理が完了しました: {header}")
+        else:
+            print("\nURLの処理に失敗しました")
+            sys.exit(1)
+    
     elif menu_choice == '2':
         search_query, topic_urls, comment_totals, num_topics_found, language_selection, summary_ai, sentiment_ai = args
-        sanitized_query = sanitize_filename(search_query, menu_choice)  # Sanitize the query to be used in the file name
+        sanitized_query = sanitize_filename(search_query, menu_choice)
         output_file_name = os.path.join(output_folder, f"output_{sanitized_query}.txt")
         output_file = open(output_file_name, "w", encoding="utf-8")
         excel_file_name = os.path.join(output_folder, f"comments_{sanitized_query}.xlsx")
@@ -1175,28 +1290,29 @@ if __name__ == "__main__":
         print(f"検索キーワード: {search_query}", file=output_file)
         print(f"検索キーワード: {search_query}")
         print(f"トピックの総数: {num_topics_found}", file=output_file)
+        
         for url, comment_total in zip(topic_urls, comment_totals):
             print(f"{count}. {url}", file=output_file)
             print(url)
-    
+
             # Create a new worksheet for the current URL
             worksheet = workbook.create_sheet(title=f"Topic {count}")
 
             # Write the header row to the worksheet
             worksheet.append(['Comment Number', 'Date', 'Plus', 'Minus', 'Total', 'Comment', 'URLs', 'Header'])
 
-            # Start scraping from the initial URL
-            while url:
-                new_url, header, comment_number = fetch_and_process_page(url, worksheet, comment_total)  # Pass the worksheet instead of the workbook
-                if not new_url or new_url == url:  # Prevent infinite loop if there's no next page or if the next page is the same
-                    break
-                url = new_url
-                time.sleep(1)  # Add a delay of 2 seconds before fetching the next page
-    
+            print(f"\nURLの処理を開始します: {url}")
+            # Process the URL asynchronously
+            header, comment_number = run_async(main(url, worksheet, comment_total))
+            if header:
+                print(f"\n処理が完了しました: {header}")
+            else:
+                print(f"\nURLの処理に失敗しました: {url}")
+                continue
+
             print(f"\n{count}件のトピックの読込みに成功しました。\n")
             count += 1
-            print(file=output_file)  # Add an empty print statement for a line break
-        print(file=output_file)  # Add an empty print statement for a line break
+            print(file=output_file)
     
     # Remove the default sheet
     default_sheet = workbook['Sheet']
