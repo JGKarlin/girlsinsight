@@ -486,7 +486,7 @@ def summarize_article_with_gpt(article_text, language_selection):
       model="gpt-4o",
       messages=[
         {"role": "system", "content": f"You are an expert content creator with a knack for providing concise yet captivating summaries in {language}."},
-        {"role": "user", "content": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instuctions in your response."},
+        {"role": "user", "content": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instructions in your response."},
       ]
     )
     return response.choices[0].message.content
@@ -507,7 +507,7 @@ def summarize_article_with_anthropic(article_text, language_selection):
                 "content": [
                     {
                         "type": "text",
-                        "text": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instuctions in your response."
+                        "text": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instructions in your response."
                     }
                 ]
             }
