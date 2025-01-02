@@ -244,16 +244,66 @@ def process_dates(group_df):
     
     return {'earliest': earliest_date, 'latest': latest_date, 'days': days, 'hours': hours, 'minutes': minutes, 'seconds': seconds}
 
-def search_wayback_machine(url, headers):
-    try:
-        wayback_search_url = f"http://archive.org/wayback/available?url={quote_plus(url)}"
-        response = requests.get(wayback_search_url, headers=headers)
-        response.raise_for_status()  # Raise HTTPError for bad responses
-        data = response.json()
-        if 'archived_snapshots' in data and 'closest' in data['archived_snapshots']:
-            return data['archived_snapshots']['closest']['url']
-    except (requests.RequestException, ValueError) as e:
-        print(f"Error occurred while searching the Wayback Machine: {str(e)}")
+def search_wayback_machine(url, headers, max_retries=3, retry_delay=1):
+    """
+    Searches the Wayback Machine for a working archived version of a URL.
+    
+    Args:
+        url (str): The URL to search for
+        headers (dict): Request headers
+        max_retries (int): Maximum number of retry attempts for failed requests
+        retry_delay (int): Delay in seconds between retries
+    
+    Returns:
+        str or None: Returns the working Wayback Machine URL if found, None otherwise
+    """
+    def make_request(search_url, attempt=0):
+        try:
+            response = requests.get(search_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError) as e:
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+                return make_request(search_url, attempt + 1)
+            print(f"Error after {max_retries} attempts: {str(e)}")
+            return None
+
+    def verify_url(wayback_url):
+        try:
+            verify_response = requests.head(wayback_url, headers=headers, timeout=10)
+            return verify_response.status_code == 200
+        except requests.RequestException:
+            return False
+
+    # First, try the standard available API
+    available_url = f"http://archive.org/wayback/available?url={quote_plus(url)}"
+    data = make_request(available_url)
+    
+    if data and 'archived_snapshots' in data and 'closest' in data['archived_snapshots']:
+        wayback_url = data['archived_snapshots']['closest']['url']
+        if verify_url(wayback_url):
+            return wayback_url
+
+    # If standard API fails, try CDX API
+    cdx_url = f"http://web.archive.org/cdx/search/cdx?url={quote_plus(url)}&output=json&collapse=timestamp:8"
+    cdx_data = make_request(cdx_url)
+    
+    if cdx_data and len(cdx_data) > 1:  # First row is header
+        for snapshot in cdx_data[1:]:
+            try:
+                timestamp = snapshot[1]
+                original = snapshot[2]
+                status = snapshot[4]
+                mimetype = snapshot[3]
+                
+                if status == '200' and mimetype.startswith('text/html'):
+                    wayback_url = f"http://web.archive.org/web/{timestamp}/{original}"
+                    if verify_url(wayback_url):
+                        return wayback_url
+            except (IndexError, KeyError):
+                continue
+
     return None
 
 # Get the comment count for single url topic
