@@ -405,7 +405,7 @@ def extract_text_from_url(all_urls, headers):
 #Analyze page for next page URL
 def get_nextpage_link(page_source):
     response = client_gpt.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o",
         max_tokens=500,
         temperature=0.2,  # Add temperature for more consistent results
         messages=[
@@ -439,7 +439,7 @@ def check_news_story_status(url_to_process):
     gc_url = url_to_process
     page_source_for_analysis = get_page_source(gc_url)
     response = client_gpt.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o",
         max_tokens=50,
         messages=[
             {"role": "system", "content": "You are an HTML parser."},
