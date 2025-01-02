@@ -56,7 +56,7 @@ While the Colab implementation is recommended for its asynchronous processing ca
 
 1. **Clone the Repository**
 ```bash
-git clone https://github.com/yourusername/girlsinsight.git
+git clone https://github.com/JGKarlin/girlsinsight.git
 cd girlsinsight
 ```
 
