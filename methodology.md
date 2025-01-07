@@ -32,7 +32,7 @@ The GirlsinSight application demonstrates a sophisticated approach to sentiment 
 
 ## References
 
-Karlin, Jason G. *GirlsinSight: A Sentiment Analysis Tool for GirlsChannel.net.* Version 1.0.1 Released 2024.
+Karlin, Jason G. *GirlsInSight: A Sentiment Analysis Tool for GirlsChannel.net.* Version 1.0.1 Released 2024.
 
 ## License
 
