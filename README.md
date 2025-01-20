@@ -114,18 +114,23 @@ All results are saved in the `outputs/` directory:
 - Data visualizations:　(`plot<query>.png` and `lineplot<query>.png`)
 
     最も高評価のコメント (Most Upvoted Comments)
+
     This visualization displays the distribution of upvotes across the most positively received comments, with the x-axis showing sequential comment numbers and the y-axis representing upvote counts. The declining pattern reveals how community approval is distributed. Higher values indicate stronger community agreement and support for particular viewpoints, while lower values suggest less enthusiastic but still positive reception. The slope of decline indicates how concentrated or dispersed community approval is across comments. This distribution helps identify the relative strength of community support for different perspectives within the discussion.
 
     最も低評価のコメント (Most Downvoted Comments)
+
     This visualization reveals the pattern of downvotes for the most negatively received comments, with downvote counts plotted against sequential comment numbers. Higher values represent strong community disagreement or rejection of certain viewpoints, while lower values indicate less intense but still negative reactions. The rate of decline between highest and lowest values shows how focused or distributed community disapproval is. This pattern reveals the relative intensity of opposition to different perspectives within the discussion.
 
     一貫性 (Consistency)
+
     This visualization compares consistency scores between highly rated and lowly rated comments on a scale of 0-10. The scores for positive and negative comments indicate how unified the community's voting patterns are in each direction. Higher consistency scores indicate strong community agreement in voting behavior, while lower scores suggest more varied reactions. The difference between positive and negative consistency scores reveals whether the community shows more unity in their approval or disapproval, providing insight into the nature of community consensus.
 
     全体的な合意度 (Overall Agreement Level)
+
     This visualization presents the overall distribution of community consensus, divided between agreement and disagreement portions. The relative sizes of these sections indicate the balance between unified and divided opinions within the discussion. Higher agreement percentages indicate stronger community consensus, while larger disagreement portions suggest more controversial or contested topics. The ratio between these values reveals the extent to which the community has reached consensus versus remaining divided on the discussion topic.
 
     コメントの頻度 (Comment Frequency)
+
     This visualization tracks the distribution of comments across the entire discussion period, automatically adapting its time scale based on the span between the earliest and latest comments. The x-axis dynamically adjusts its intervals and format depending on the discussion duration: hourly intervals for discussions under a day, daily for up to a week, every two days for up to a month, monthly for up to a year, and yearly for longer periods. The y-axis represents the number of comments posted during each time interval. Higher values indicate periods of intense community engagement, while lower values show reduced activity. The resulting line pattern reveals the natural evolution of the discussion's intensity, showing how community participation fluctuated throughout the topic's active period. This temporal mapping helps identify peak engagement periods, natural lulls, and the overall rhythm of community participation, with the visualization automatically optimizing its display to best represent discussions of any length - from hours-long exchanges to conversations spanning months or years.
 
 ---
