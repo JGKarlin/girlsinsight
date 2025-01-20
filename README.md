@@ -3,6 +3,7 @@
 GirlsInsight is a Python tool for web scraping and sentiment analysis of GirlsChannel.net comments. By analyzing upvoted and downvoted comments, it evaluates themes, emotions, and cultural contexts to provide nuanced insights into online community sentiment. Designed for researchers, analysts, and developers, GirlsInsight simplifies the process of gathering, analyzing, and visualizing large datasets.
 
 GirlsinSightは、GirlsChannel.netのコメントを対象にしたウェブスクレイピングおよび感情分析を行うPythonツールです。高評価および低評価のコメントを分析することで、テーマ、感情、および文化的文脈を評価します。定性的研究向けに設計されており、学術、マーケット、または社会文化的分析のために、コミュニティ感情のトレンドに関する微細な洞察を提供します。
+
 For detailed information about the technical implementation and methodology, please refer to our [Technical Documentation](https://github.com/JGKarlin/girlsinsight/blob/main/methodology.md).
 
 ---
