@@ -113,9 +113,9 @@ All results are saved in the `outputs/` directory:
 - Text summaries (`output_<query>.txt`)
 - Data visualizations:　(`plot<query>.png` and `lineplot<query>.png`)
 
-    最も高評価のコメント (Most Upvoted Comments)
-		<!-- -->
-		This visualization displays the distribution of upvotes across the most positively received comments, with the x-axis showing sequential comment numbers and the y-axis representing upvote counts. The declining pattern reveals how community approval is distributed. Higher values indicate stronger community agreement and support for particular viewpoints, while lower values suggest less enthusiastic but still positive reception. The slope of decline indicates how concentrated or dispersed community approval is across comments. This distribution helps identify the relative strength of community support for different perspectives within the discussion.
+  ## 最も高評価のコメント (Most Upvoted Comments)
+	<!-- -->
+	This visualization displays the distribution of upvotes across the most positively received comments, with the x-axis showing sequential comment numbers and the y-axis representing upvote counts. The declining pattern reveals how community approval is distributed. Higher values indicate stronger community agreement and support for particular viewpoints, while lower values suggest less enthusiastic but still positive reception. The slope of decline indicates how concentrated or dispersed community approval is across comments. This distribution helps identify the relative strength of community support for different perspectives within the discussion.
 
     最も低評価のコメント (Most Downvoted Comments)
 		<!-- -->
