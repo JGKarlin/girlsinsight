@@ -26,6 +26,22 @@ The selection process targets both the most upvoted and downvoted comments in th
 
 The adaptive linear sampling function is \( n = 0.0091t + 9.09 \), where \(n\) represents the number of comments to analyze and \(t\) represents the total number of comments in the dataset. This formula ensures statistical rigor while maintaining computational efficiency by establishing a minimum sample of approximately 10 comments (through the 9.09 intercept) while scaling proportionally for larger datasets (through the 0.0091 slope). For instance, a discussion thread containing 100 comments would yield a sample of 10 comments for analysis, while a viral discussion with 10,000 comments would analyze 100 comments. This adaptive approach allows the methodology to respond dynamically to varying dataset sizes while maintaining analytical validity. The formula is applied equally to both highly upvoted and highly downvoted comments, ensuring balanced representation of the community's most strongly endorsed and contested viewpoints.
 
+## Statistical Analysis
+平均比率 (Average Ratio)
+The average ratio represents how positively comments are typically received across the group. It takes all upvote ratios and finds their mean value, providing insight into the general reception of comments. When this number is higher, it suggests that comments tend to receive more positive votes than negative ones, indicating broader agreement with the expressed viewpoints.
+
+中央値比率 (Median Ratio)
+The median ratio shows the central tendency of comment reception by identifying the middle value when all upvote ratios are arranged in order. This metric is particularly valuable because it isn't skewed by extremely positive or negative outliers, giving a more stable picture of how the typical comment is received by the community.
+
+標準偏差 (Standard Deviation)
+The standard deviation reveals how much variation exists in how comments are received. A smaller standard deviation indicates that most comments receive similar ratios of positive to negative votes, suggesting consistent community reactions. A larger value points to more varied reactions, with some comments receiving vastly different reception than others.
+
+不一致の度合 (Degree of Disagreement)
+The degree of disagreement provides a score that evaluates how much conflict exists in the community's reactions to comments. This metric combines multiple factors into a single score from 0-10, where higher scores indicate more unified community responses and lower scores suggest more contentious or disputed viewpoints.
+
+全体的な合意度 (Overall Agreement Score)
+The overall agreement score synthesizes both positive and negative sentiment metrics into a final measure of community consensus. This comprehensive score from 0-10 reflects how unified the community's response is across all comments, with higher scores indicating stronger agreement in the community's reactions and lower scores suggesting more divided opinions.
+
 ## Conclusion
 
 The GirlsinSight application demonstrates a sophisticated approach to sentiment analysis that combines advanced LLM capabilities with traditional sentiment analysis techniques. Its implementation reflects careful consideration of both technical constraints and analytical requirements, resulting in a tool capable of providing nuanced insights into online community sentiment patterns.
