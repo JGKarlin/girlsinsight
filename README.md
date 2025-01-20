@@ -109,9 +109,21 @@ python girlsinsight.v1.0.1.py
 All results are saved in the `outputs/` directory:
 - Excel files (`comments_<query>.xlsx`)
 - Text summaries (`output_<query>.txt`)
-- Two visualization files:
-  - `plot_<query>.png` containing bar charts and pie chart
-  - `lineplot_<query>.png` showing comment frequency over time
+- Data visualizations:
+ ・コメントの頻度 (Comment Frequency)
+This visualization tracks the distribution of comments across the entire discussion period, automatically adapting its time scale based on the span between the earliest and latest comments. The x-axis dynamically adjusts its intervals and format depending on the discussion duration: hourly intervals for discussions under a day, daily for up to a week, every two days for up to a month, monthly for up to a year, and yearly for longer periods. The y-axis represents the number of comments posted during each time interval. Higher values indicate periods of intense community engagement, while lower values show reduced activity. The resulting line pattern reveals the natural evolution of the discussion's intensity, showing how community participation fluctuated throughout the topic's active period. This temporal mapping helps identify peak engagement periods, natural lulls, and the overall rhythm of community participation, with the visualization automatically optimizing its display to best represent discussions of any length - from hours-long exchanges to conversations spanning months or years.
+
+ ・最も高評価のコメント (Most Upvoted Comments)
+This visualization displays the distribution of upvotes across the most positively received comments, with the x-axis showing comment numbers from 1 to 182 and the y-axis representing upvote counts. A clear declining pattern emerges from the highest point of approximately 3,500 votes. Higher values indicate stronger community agreement and support for particular viewpoints, while lower values suggest less enthusiastic but still positive reception. The steep initial decline followed by a gradual tapering shows that while many comments receive positive attention, a select few garnered exceptional community support. This distribution helps identify which perspectives most powerfully resonated with the community.
+
+ ・最も低評価のコメント (Most Downvoted Comments)
+This visualization reveals the pattern of downvotes for the most negatively received comments, spanning from 1 to 182 comments with downvote counts on the y-axis. Higher values here, reaching around 3,000 downvotes, represent strong community disagreement or rejection of certain viewpoints, while lower values indicate less intense but still negative reactions. The sharp initial decline followed by a gradual decrease suggests that while the community strongly rejected certain comments, their negative reactions became less intense for the majority of disapproved content. This pattern reveals which perspectives faced the strongest opposition within the discussion.
+
+　・一貫性 (Consistency)
+This visualization compares consistency scores between highly rated and lowly rated comments on a scale of 0-10. The higher score of 9.81 for positive comments indicates strong community agreement in what they approve of, reflecting consistent positive voting patterns. The lower score of 6.37 for negative comments suggests more varied reactions to disapproved content, showing less unity in what the community dislikes. This difference in scoring demonstrates that the community maintains stronger consensus in their approval than in their disapproval, providing insight into how unified community opinions are across different types of content.
+
+　・全体的な合意度 (Overall Agreement Level)
+This visualization presents the community's overall consensus, divided between 合意の度合 at 80.9% and 不一致の度合 at 19.1%. Higher values in the agreement portion indicate stronger community consensus and shared perspectives, while the smaller disagreement section represents areas of controversy or divided opinions. The significant difference between these percentages reveals a community that has reached clear consensus on most aspects of the discussion, with relatively minor areas of contention. This strong agreement-to-disagreement ratio suggests that despite some varying viewpoints, the community maintains a robust unified position on the topic.
 
 ---
 
