@@ -1,17 +1,17 @@
 # GirlsinSight
 
-GirlsInsight is a Python tool for web scraping and sentiment analysis of GirlsChannel.net comments. By analyzing upvoted and downvoted comments, it evaluates themes, emotions, and cultural contexts to provide nuanced insights into online community sentiment. Designed for researchers, analysts, and developers, GirlsInsight simplifies the process of gathering, analyzing, and visualizing large datasets.
+GirlsinSight is a Python tool for web scraping and sentiment analysis of GirlsChannel.net comments. By analyzing upvoted and downvoted comments, it evaluates themes, emotions, and cultural contexts to provide nuanced insights into online community sentiment. Designed for researchers, analysts, and developers, GirlsinSight simplifies the process of gathering, analyzing, and visualizing large datasets.
 
-For detailed information about the technical implementation and methodology, please refer to our [Technical Documentation](https://github.com/JGKarlin/girlsinsight/blob/main/methodology.md).
+For detailed information about the technical implementation and methodology, please refer to our [Technical Documentation](https://github.com/JGKarlin/GirlsinSight/blob/main/methodology.md).
 
 ---
 
 ## Quick Start with Google Colab
 
-The recommended way to use GirlsInsight is through Google Colab, which provides a ready-to-use environment with all dependencies pre-installed and asynchronous processing capabilities for optimal web scraping performance.
+The recommended way to use GirlsinSight is through Google Colab, which provides a ready-to-use environment with all dependencies pre-installed and asynchronous processing capabilities for optimal web scraping performance.
 
 ### Step 1: Access the Notebook
-Open the GirlsInsight Jupyter notebook in Google Colab by clicking this link: [GirlsInsight Colab Notebook](https://colab.research.google.com/github/JGKarlin/girlsinsight/blob/main/girlsinsight.v1.0.1.ipynb)
+Open the GirlsinSight Jupyter notebook in Google Colab by clicking this link: [GirlsinSight Colab Notebook](https://colab.research.google.com/github/JGKarlin/Girlsinsight/blob/main/GirlsinSight.v1.0.1.ipynb)
 
 ### Step 2: Set Up Gemini API
 1. Visit the [Gemini AI API Key Page](https://aistudio.google.com/app/apikey)
@@ -45,7 +45,7 @@ Open the GirlsInsight Jupyter notebook in Google Colab by clicking this link: [G
 
 ## Alternative: Local Installation
 
-While the Colab implementation is recommended for its asynchronous processing capabilities, you can also run GirlsInsight locally. Note that the local version (girlsinsight.v1.0.1.py) uses synchronous processing to ensure discrete interactions with GirlsChannel.net.
+While the Colab implementation is recommended for its asynchronous processing capabilities, you can also run GirlsinSight locally. Note that the local version (GirlsinSight.v1.0.1.py) uses synchronous processing to ensure discrete interactions with GirlsChannel.net.
 
 ### Requirements
 - Python 3.7+
@@ -56,8 +56,8 @@ While the Colab implementation is recommended for its asynchronous processing ca
 
 1. **Clone the Repository**
 ```bash
-git clone https://github.com/JGKarlin/girlsinsight.git
-cd girlsinsight
+git clone https://github.com/JGKarlin/GirlsinSight.git
+cd GirlsinSight
 ```
 
 2. **Install Dependencies**
@@ -75,7 +75,7 @@ GEMINI_API_KEY=your_gemini_api_key
 
 4. **Run the Script**
 ```bash
-python girlsinsight.v1.0.1.py
+python GirlsinSight.v1.0.1.py
 ```
 
 ---
@@ -126,11 +126,11 @@ All results are saved in the `outputs/` directory:
 ## Directory Structure
 
 ```
-girlsinsight/
+GirlsinSight/
 │
-├── girlsinsight_v1_0_1.ipynb     # Colab notebook (recommended)
-├── girlsinsight.v1.0.1.py        # Local script
-├── girlsinsight.v1.0.1.colab.py  # Colab-optimized script
+├── GirlsinSight_v1_0_1.ipynb     # Colab notebook (recommended)
+├── GirlsinSight.v1.0.1.py        # Local script
+├── GirlsinSight.v1.0.1.colab.py  # Colab-optimized script
 ├── requirements.txt              # Dependencies
 ├── methodology.md               # Technical implementation details
 ├── .env                          # Environment variables
