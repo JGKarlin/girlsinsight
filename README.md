@@ -2,9 +2,7 @@
 
 GirlsInsight is a Python tool for web scraping and sentiment analysis of GirlsChannel.net comments. By analyzing upvoted and downvoted comments, it evaluates themes, emotions, and cultural contexts to provide nuanced insights into online community sentiment. Designed for researchers, analysts, and developers, GirlsInsight simplifies the process of gathering, analyzing, and visualizing large datasets.
 
-GirlsinSightは、GirlsChannel.netのコメントを対象にしたウェブスクレイピングおよび感情分析を行うPythonツールです。高評価および低評価のコメントを分析することで、テーマ、感情、および文化的文脈を評価します。定性的研究向けに設計されており、学術、マーケット、または社会文化的分析のために、コミュニティ感情のトレンドに関する微細な洞察を提供します。
-
-For detailed information about the technical implementation and methodology, please refer to our [Technical Documentation](https://github.com/JGKarlin/girlsinsight/blob/main/methodology.md).
+For detailed information about the technical implementation and methodology, please refer to our [Technical Documentation](https://github.com/JGKarlin/GirlsInsight/blob/main/methodology.md).
 
 ---
 
@@ -13,7 +11,7 @@ For detailed information about the technical implementation and methodology, ple
 The recommended way to use GirlsInsight is through Google Colab, which provides a ready-to-use environment with all dependencies pre-installed and asynchronous processing capabilities for optimal web scraping performance.
 
 ### Step 1: Access the Notebook
-Open the GirlsInsight Jupyter notebook in Google Colab by clicking this link: [GirlsInsight Colab Notebook](https://colab.research.google.com/github/JGKarlin/girlsinsight/blob/main/girlsinsight.v1.0.1.ipynb)
+Open the GirlsInsight Jupyter notebook in Google Colab by clicking this link: [GirlsInsight Colab Notebook](https://colab.research.google.com/github/JGKarlin/GirlsInsight/blob/main/girlsinsight.v1.0.1.ipynb)
 
 ### Step 2: Set Up Gemini API
 1. Visit the [Gemini AI API Key Page](https://aistudio.google.com/app/apikey)
@@ -47,7 +45,7 @@ Open the GirlsInsight Jupyter notebook in Google Colab by clicking this link: [G
 
 ## Alternative: Local Installation
 
-While the Colab implementation is recommended for its asynchronous processing capabilities, you can also run GirlsInsight locally. Note that the local version (girlsinsight.v1.0.1.py) uses synchronous processing to ensure discrete interactions with GirlsChannel.net.
+While the Colab implementation is recommended for its asynchronous processing capabilities, you can also run GirlsInsight locally. Note that the local version (GirlsInsight.v1.0.1.py) uses synchronous processing to ensure discrete interactions with GirlsChannel.net.
 
 ### Requirements
 - Python 3.7+
@@ -58,8 +56,8 @@ While the Colab implementation is recommended for its asynchronous processing ca
 
 1. **Clone the Repository**
 ```bash
-git clone https://github.com/JGKarlin/girlsinsight.git
-cd girlsinsight
+git clone https://github.com/JGKarlin/GirlsInsight.git
+cd GirlsInsight
 ```
 
 2. **Install Dependencies**
@@ -77,7 +75,7 @@ GEMINI_API_KEY=your_gemini_api_key
 
 4. **Run the Script**
 ```bash
-python girlsinsight.v1.0.1.py
+python GirlsInsight.v1.0.1.py
 ```
 
 ---
@@ -113,31 +111,26 @@ All results are saved in the `outputs/` directory:
 - Text summaries (`output_<query>.txt`)
 - Data visualizations:　(`plot<query>.png` and `lineplot<query>.png`)
 
-    最も高評価のコメント (Most Upvoted Comments)
-    This visualization displays the distribution of upvotes across the most positively received comments, with the x-axis showing sequential comment numbers and the y-axis representing upvote counts. The declining pattern reveals how community approval is distributed. Higher values indicate stronger community agreement and support for particular viewpoints, while lower values suggest less enthusiastic but still positive reception. The slope of decline indicates how concentrated or dispersed community approval is across comments. This distribution helps identify the relative strength of community support for different perspectives within the discussion.
+	最も高評価のコメント (Most Upvoted Comments): This visualization displays the distribution of upvotes across the most positively received comments, with the x-axis showing sequential comment numbers and the y-axis representing upvote counts. The declining pattern reveals how community approval is distributed. Higher values indicate stronger community agreement and support for particular viewpoints, while lower values suggest less enthusiastic but still positive reception. The slope of decline indicates how concentrated or dispersed community approval is across comments. This distribution helps identify the relative strength of community support for different perspectives within the discussion.
 
-    最も低評価のコメント (Most Downvoted Comments)
-    This visualization reveals the pattern of downvotes for the most negatively received comments, with downvote counts plotted against sequential comment numbers. Higher values represent strong community disagreement or rejection of certain viewpoints, while lower values indicate less intense but still negative reactions. The rate of decline between highest and lowest values shows how focused or distributed community disapproval is. This pattern reveals the relative intensity of opposition to different perspectives within the discussion.
+  最も低評価のコメント (Most Downvoted Comments): This visualization reveals the pattern of downvotes for the most negatively received comments, with downvote counts plotted against sequential comment numbers. Higher values represent strong community disagreement or rejection of certain viewpoints, while lower values indicate less intense but still negative reactions. The rate of decline between highest and lowest values shows how focused or distributed community disapproval is. This pattern reveals the relative intensity of opposition to different perspectives within the discussion.
 
-    一貫性 (Consistency)
-    This visualization compares consistency scores between highly rated and lowly rated comments on a scale of 0-10. The scores for positive and negative comments indicate how unified the community's voting patterns are in each direction. Higher consistency scores indicate strong community agreement in voting behavior, while lower scores suggest more varied reactions. The difference between positive and negative consistency scores reveals whether the community shows more unity in their approval or disapproval, providing insight into the nature of community consensus.
+  一貫性 (Consistency): This visualization compares consistency scores between highly rated and lowly rated comments on a scale of 0-10. The scores for positive and negative comments indicate how unified the community's voting patterns are in each direction. Higher consistency scores indicate strong community agreement in voting behavior, while lower scores suggest more varied reactions. The difference between positive and negative consistency scores reveals whether the community shows more unity in their approval or disapproval, providing insight into the nature of community consensus.
 
-    全体的な合意度 (Overall Agreement Level)
-    This visualization presents the overall distribution of community consensus, divided between agreement and disagreement portions. The relative sizes of these sections indicate the balance between unified and divided opinions within the discussion. Higher agreement percentages indicate stronger community consensus, while larger disagreement portions suggest more controversial or contested topics. The ratio between these values reveals the extent to which the community has reached consensus versus remaining divided on the discussion topic.
+  全体的な合意度 (Overall Agreement Level): This visualization presents the overall distribution of community consensus, divided between agreement and disagreement portions. The relative sizes of these sections indicate the balance between unified and divided opinions within the discussion. Higher agreement percentages indicate stronger community consensus, while larger disagreement portions suggest more controversial or contested topics. The ratio between these values reveals the extent to which the community has reached consensus versus remaining divided on the discussion topic.
 
-    コメントの頻度 (Comment Frequency)
-    This visualization tracks the distribution of comments across the entire discussion period, automatically adapting its time scale based on the span between the earliest and latest comments. The x-axis dynamically adjusts its intervals and format depending on the discussion duration: hourly intervals for discussions under a day, daily for up to a week, every two days for up to a month, monthly for up to a year, and yearly for longer periods. The y-axis represents the number of comments posted during each time interval. Higher values indicate periods of intense community engagement, while lower values show reduced activity. The resulting line pattern reveals the natural evolution of the discussion's intensity, showing how community participation fluctuated throughout the topic's active period. This temporal mapping helps identify peak engagement periods, natural lulls, and the overall rhythm of community participation, with the visualization automatically optimizing its display to best represent discussions of any length - from hours-long exchanges to conversations spanning months or years.
+  コメントの頻度 (Comment Frequency): This visualization tracks the distribution of comments across the entire discussion period, automatically adapting its time scale based on the span between the earliest and latest comments. The x-axis dynamically adjusts its intervals and format depending on the discussion duration: hourly intervals for discussions under a day, daily for up to a week, every two days for up to a month, monthly for up to a year, and yearly for longer periods. The y-axis represents the number of comments posted during each time interval. Higher values indicate periods of intense community engagement, while lower values show reduced activity. The resulting line pattern reveals the natural evolution of the discussion's intensity, showing how community participation fluctuated throughout the topic's active period. This temporal mapping helps identify peak engagement periods, natural lulls, and the overall rhythm of community participation, with the visualization automatically optimizing its display to best represent discussions of any length - from hours-long exchanges to conversations spanning months or years.
 
 ---
 
 ## Directory Structure
 
 ```
-girlsinsight/
+GirlsInsight/
 │
-├── girlsinsight_v1_0_1.ipynb     # Colab notebook (recommended)
-├── girlsinsight.v1.0.1.py        # Local script
-├── girlsinsight.v1.0.1.colab.py  # Colab-optimized script
+├── GirlsInsight_v1_0_1.ipynb     # Colab notebook (recommended)
+├── GirlsInsight.v1.0.1.py        # Local script
+├── GirlsInsight.v1.0.1.colab.py  # Colab-optimized script
 ├── requirements.txt              # Dependencies
 ├── methodology.md               # Technical implementation details
 ├── .env                          # Environment variables
