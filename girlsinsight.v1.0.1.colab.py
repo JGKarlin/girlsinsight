@@ -402,6 +402,7 @@ def get_page_source(gc_url, chunk_size=102400):
     return page_source
 
 def create_url_list(url_to_process):
+    base_url = "https://girlschannel.net"  # Or extract from the original URL
     all_urls = [url_to_process]
     gc_url = url_to_process
     while gc_url:
@@ -410,6 +411,19 @@ def create_url_list(url_to_process):
             next_page_url = get_nextpage_link(page_source)
             
             if next_page_url != "null":
+                # Convert relative URL to absolute URL
+                if next_page_url.startswith('/'):
+                    # Check if this is a domain-relative URL (starts with /)
+                    # Extract the domain from the original URL
+                    from urllib.parse import urlparse
+                    parsed_original = urlparse(url_to_process)
+                    base_domain = f"{parsed_original.scheme}://{parsed_original.netloc}"
+                    next_page_url = base_domain + next_page_url
+                elif not next_page_url.startswith(('http://', 'https://')):
+                    # If it's a page-relative URL (doesn't start with / or http)
+                    # Combine with the path of the current URL
+                    next_page_url = urljoin(gc_url, next_page_url)
+                
                 if next_page_url in all_urls:
                     print("No additional pages found.")
                     break
@@ -421,7 +435,7 @@ def create_url_list(url_to_process):
                 break
         except requests.ConnectionError:
             print(f"\nConnectionError encountered. \nTrying to find {gc_url} on the Wayback Machine...")
-            wayback_url = search_wayback_machine(gc_url, headers)  # Add headers parameter here
+            wayback_url = search_wayback_machine(gc_url, headers)
             if wayback_url:
                 print("\nアーカイブ版が見つかりました。")
                 all_urls = [wayback_url]  # Replace all_urls with the Wayback Machine URL
@@ -432,7 +446,7 @@ def create_url_list(url_to_process):
         except requests.exceptions.RequestException as e:
             print(f"\nError occurred while processing {gc_url}: {str(e)}")
             print(f"\nTrying to find {gc_url} on the Wayback Machine...")
-            wayback_url = search_wayback_machine(gc_url, headers)  # Add headers parameter here
+            wayback_url = search_wayback_machine(gc_url, headers)
             if wayback_url:
                 print("\nアーカイブ版が見つかりました。")
                 all_urls = [wayback_url]  # Replace all_urls with the Wayback Machine URL
