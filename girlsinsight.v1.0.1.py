@@ -247,6 +247,8 @@ def process_dates(group_df):
 def search_wayback_machine(url, headers, max_retries=3, retry_delay=1):
     """
     Searches the Wayback Machine for a working archived version of a URL.
+    Prioritizes finding the oldest valid snapshot from recent CDX results,
+    then falls back to the 'closest' available snapshot.
     
     Args:
         url (str): The URL to search for
@@ -263,47 +265,94 @@ def search_wayback_machine(url, headers, max_retries=3, retry_delay=1):
             response.raise_for_status()
             return response.json()
         except (requests.RequestException, ValueError) as e:
-            if attempt < max_retries:
+            # Reduced verbosity for retries unless max_retries is hit
+            if attempt < max_retries -1 : # try silently until the last attempt
+                 time.sleep(retry_delay)
+                 return make_request(search_url, attempt + 1)
+            # On last attempt, print error if it fails
+            if attempt == max_retries -1:
                 time.sleep(retry_delay)
-                return make_request(search_url, attempt + 1)
-            print(f"Error after {max_retries} attempts: {str(e)}")
+                try:
+                    response = requests.get(search_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    return response.json()
+                except (requests.RequestException, ValueError) as final_e:
+                    print(f"Error fetching {search_url} after {max_retries} attempts: {str(final_e)}")
             return None
 
-    def verify_url(wayback_url):
+    def verify_url(wayback_url_to_check):
         try:
-            verify_response = requests.head(wayback_url, headers=headers, timeout=10)
-            return verify_response.status_code == 200
+            # Use HEAD request, allow redirects, and check Content-Type
+            verify_response = requests.head(
+                wayback_url_to_check,
+                headers=headers,
+                timeout=15,
+                allow_redirects=True  # Important: follow redirects
+            )
+            verify_response.raise_for_status()  # Check for 2xx status codes after redirects
+
+            content_type = verify_response.headers.get('Content-Type', '').lower()
+            is_html = 'text/html' in content_type
+            
+            return is_html
         except requests.RequestException:
+            # Catches timeouts, connection errors, too_many_redirects, non-2xx from raise_for_status
             return False
 
-    # First, try the standard available API
-    available_url = f"http://archive.org/wayback/available?url={quote_plus(url)}"
-    data = make_request(available_url)
+    # Attempt 1: CDX API for a list of snapshots, aiming for the oldest valid one among recent captures
+    # Get up to 20 recent captures that were originally 200 OK and text/html
+    cdx_api_url = f"http://web.archive.org/cdx/search/cdx?url={quote_plus(url)}&output=json&filter=statuscode:200&filter=mimetype:text/html&limit=20"
+    data_cdx = make_request(cdx_api_url)
     
-    if data and 'archived_snapshots' in data and 'closest' in data['archived_snapshots']:
-        wayback_url = data['archived_snapshots']['closest']['url']
-        if verify_url(wayback_url):
-            return wayback_url
+    valid_cdx_snapshots = []
+    if data_cdx:
+        if len(data_cdx) > 0 and isinstance(data_cdx[0], list) and len(data_cdx[0]) > 1 and data_cdx[0][0] == 'urlkey':
+             # Skip header row if present (Wayback CDX API sometimes includes it)
+             data_cdx_iterable = data_cdx[1:]
+        else:
+             data_cdx_iterable = data_cdx
 
-    # If standard API fails, try CDX API
-    cdx_url = f"http://web.archive.org/cdx/search/cdx?url={quote_plus(url)}&output=json&collapse=timestamp:8"
-    cdx_data = make_request(cdx_url)
-    
-    if cdx_data and len(cdx_data) > 1:  # First row is header
-        for snapshot in cdx_data[1:]:
+        for snapshot_details in data_cdx_iterable:
             try:
-                timestamp = snapshot[1]
-                original = snapshot[2]
-                status = snapshot[4]
-                mimetype = snapshot[3]
-                
-                if status == '200' and mimetype.startswith('text/html'):
-                    wayback_url = f"http://web.archive.org/web/{timestamp}/{original}"
-                    if verify_url(wayback_url):
-                        return wayback_url
-            except (IndexError, KeyError):
-                continue
+                # Standard CDX format: urlkey, timestamp, original, mimetype, statuscode, digest, length
+                # Ensure snapshot_details is a list and has enough elements
+                if not isinstance(snapshot_details, list) or len(snapshot_details) < 3:
+                    continue
 
+                timestamp = snapshot_details[1]
+                original_page_url = snapshot_details[2]
+                
+                wayback_candidate_url = f"http://web.archive.org/web/{timestamp}/{original_page_url}"
+                
+                if verify_url(wayback_candidate_url):
+                    valid_cdx_snapshots.append({
+                        'url': wayback_candidate_url,
+                        'timestamp': timestamp 
+                    })
+            except (IndexError, KeyError, TypeError):
+                # Silently skip malformed entries
+                continue
+    
+    if valid_cdx_snapshots:
+        valid_cdx_snapshots.sort(key=lambda s: s['timestamp']) # Sort oldest first
+        # print(f"Debug: Found {len(valid_cdx_snapshots)} valid snapshots from CDX. Oldest: {valid_cdx_snapshots[0]['url']}")
+        return valid_cdx_snapshots[0]['url']
+
+    # Attempt 2: Fallback to standard "available" API for the 'closest' snapshot
+    available_url_api = f"http://archive.org/wayback/available?url={quote_plus(url)}"
+    data_available = make_request(available_url_api)
+    
+    if data_available and 'archived_snapshots' in data_available and \
+       'closest' in data_available['archived_snapshots'] and \
+       data_available['archived_snapshots']['closest'] and \
+       'url' in data_available['archived_snapshots']['closest']:
+        
+        closest_url = data_available['archived_snapshots']['closest']['url']
+        if closest_url and verify_url(closest_url):
+            # print(f"Debug: Falling back to 'closest' URL from available API: {closest_url}")
+            return closest_url
+
+    # print(f"Debug: No working archive found for {url}")
     return None
 
 # Get the comment count for single url topic
@@ -1278,22 +1327,33 @@ if __name__ == "__main__":
         # Directly fetch the first URL from the DataFrame
         url_to_process = df.loc[(df['Comment Number'] == 1) & (df.index >= start_index), 'URLs'].iloc[0]
         
+        article_text = "" # Initialize article_text
+        news_story_status = None # Initialize
+        source_to_display_for_summary = None # Will hold the primary URL associated with the article text
+        wayback_url_actually_used = None # Specifically if a wayback URL was successfully used
+
         # Check if the URL is not NaN
         if pd.notna(url_to_process):
             news_story_status = check_news_story_status(url_to_process)
             if news_story_status == "active":
                 all_urls = create_url_list(url_to_process)
-                article_text = extract_text_from_url(all_urls, headers)
+                _article_text_candidate = extract_text_from_url(all_urls, headers)
+                if _article_text_candidate:
+                    article_text = _article_text_candidate
+                    source_to_display_for_summary = url_to_process # Active URL is the source
             elif news_story_status == "inactive":
                 print("\n出典先は無効でした。")
-                wayback_url = search_wayback_machine(url_to_process, headers)
-                if wayback_url:
+                _found_archive_url = search_wayback_machine(url_to_process, headers)
+                if _found_archive_url:
                     print("\nアーカイブ版が見つかりました。")
-                    article_text = extract_text_from_url([wayback_url], headers)
+                    _article_text_candidate = extract_text_from_url([_found_archive_url], headers)
+                    if _article_text_candidate:
+                        article_text = _article_text_candidate
+                        source_to_display_for_summary = url_to_process # Original URL is still the primary reference
+                        wayback_url_actually_used = _found_archive_url # This archive was used
                 else:
                     print("ウェイバックマシンにアーカイブ版も見つかりませんでした。")
-                    article_text = ""  # Set article_text to an empty string if no archived version is found
-            
+           
             if article_text:
                 summary = globals()[f"summarize_article_with_{summary_ai}"](article_text, language_selection)
                 print(file=output_file)
@@ -1303,11 +1363,26 @@ if __name__ == "__main__":
                 print(summary, file=output_file)
                 print(summary)
                 print(file=output_file)  # Optional: Add an empty print statement for a line break
-                print(f"出典: {url_to_process}", file=output_file)
-                print(f"\n出典: {url_to_process}")
-            else:
+                
+                if wayback_url_actually_used:
+                    print(f"Original source (inactive): {source_to_display_for_summary}", file=output_file)
+                    print(f"\nOriginal source (inactive): {source_to_display_for_summary}")
+                    print(f"Archived version used: {wayback_url_actually_used}", file=output_file)
+                    print(f"Archived version used: {wayback_url_actually_used}")
+                elif source_to_display_for_summary: # Active URL provided the text, and no wayback was involved
+                    print(f"出典: {source_to_display_for_summary}", file=output_file)
+                    print(f"\n出典: {source_to_display_for_summary}")
+                # If both are None but article_text exists, that would be an edge case not covered by current var assignments
+            else: # article_text is empty
+                print("\n記事のテキストが見つかりませんでした。要約の生成を見送りました。", file=output_file)
                 print("\n記事のテキストが見つかりませんでした。要約の生成を見送りました。")
-        # Directly fetch the top comment from the DataFrame
+                if news_story_status == "inactive":
+                     print(f"Original source (inactive, no usable archive found or text extraction failed): {url_to_process}", file=output_file)
+                     print(f"Original source (inactive, no usable archive found or text extraction failed): {url_to_process}")
+                elif news_story_status == "active": # Active, but text extraction failed
+                     print(f"Source (active, but text extraction failed): {url_to_process}", file=output_file)
+                     print(f"Source (active, but text extraction failed): {url_to_process}")
+        # Directly fetch the top comment from the DataFrame if url_to_process was NaN
         else:
             topcomment_text = df.loc[df['Comment Number'] == 1, 'Comment'].iloc[i]
             summary = globals()[f"summarize_topic_with_{summary_ai}"](topcomment_text, language_selection)
