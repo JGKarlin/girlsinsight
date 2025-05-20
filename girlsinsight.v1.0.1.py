@@ -65,7 +65,7 @@ client_anthropic = anthropic.Anthropic(
   api_key=os.environ['ANTHROPIC_API_KEY'],
 )
 genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
-client_gemini = genai.GenerativeModel('gemini-2.0-flash-001')
+client_gemini = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
 
 # Get the directory of the current script
 directory_path = os.path.dirname(os.path.realpath(__file__))
@@ -456,7 +456,7 @@ def summarize_article_with_gemini(article_text, language_selection):
     language = language_options.get(language_selection, "")
     
     # Initialize the model
-    model = genai.GenerativeModel('models/gemini-2.0-flash-001')
+    model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
     
     # Create the prompt
     prompt = f"""You are an expert content creator specializing in {language} summaries.
@@ -497,7 +497,7 @@ def summarize_article_with_anthropic(article_text, language_selection):
     language = language_options.get(language_selection, "")
     system_prompt = f"You are an expert content creator with a knack for providing concise yet captivating summaries in {language}."
     message = client_anthropic.messages.create(
-        model="claude-3-5-sonnet-latest",
+        model="claude-3-7-sonnet-latest",
         max_tokens=2048,
         temperature=0.2,
         system=system_prompt,
@@ -534,7 +534,7 @@ def summarize_topic_with_anthropic(topcomment_text, language_selection):
     language = language_options.get(language_selection, "")
     system_prompt = f"You are a social media analyst who excels at explaining the meaning of posts in {language}."
     message = client_anthropic.messages.create(
-        model="claude-3-5-sonnet-latest",
+        model="claude-3-7-sonnet-latest",
         max_tokens=2048,
         temperature=0.2,
         system=system_prompt,
@@ -560,7 +560,7 @@ def summarize_topic_with_gemini(topcomment_text, language_selection):
     language = language_options.get(language_selection, "")
     
     # Initialize the model
-    model = genai.GenerativeModel('models/gemini-2.0-flash-001')
+    model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
     
     # Create the prompt
     prompt = f"""You are a social media analyst specializing in {language} content analysis.
@@ -591,7 +591,7 @@ def evaluate_sentiment_with_gemini(search_query, highest_sentiment_comments,
     language = language_options.get(language_selection, "")
     
     # Initialize the model inside the function
-    model = genai.GenerativeModel('models/gemini-2.0-flash-001')
+    model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
     
     # Create the prompt
     system_prompt = f"""You are a helpful Japanese assistant trained to analyze comments from the online forum GirlsChannel.net related to {search_query}. Your task is to write a comprehensive, cohesive essay in {language} that evaluates the sentiments expressed by the users. The essay should integrate the main themes, emotions, and attitudes present in the comments, providing a nuanced perspective on the overall community sentiment. Aim to write a well-structured essay of approximately 500 words, focusing on the predominant opinions while also considering dissenting views. The essay should flow smoothly, without being divided into distinct sections.
@@ -639,7 +639,7 @@ def evaluate_sentiment_with_anthropic(search_query, highest_sentiment_comments, 
     system_prompt = f"You are a helpful Japanese assistant trained to analyze comments from the online forum GirlsChannel.net related to {search_query}. Your task is to write a comprehensive, cohesive essay in {language} that evaluates the sentiments expressed by the users. The essay should integrate the main themes, emotions, and attitudes present in the comments, providing a nuanced perspective on the overall community sentiment. Aim to write a well-structured essay of approximately 500 words, focusing on the predominant opinions while also considering dissenting views. The essay should flow smoothly, without being divided into distinct sections."
 
     message = client_anthropic.messages.create(
-        model="claude-3-5-sonnet-latest",
+        model="claude-3-7-sonnet-latest",
         max_tokens=4096,
         temperature=0.3,
         system=system_prompt,
