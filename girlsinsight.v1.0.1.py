@@ -50,7 +50,12 @@ current_datetime = dt.now()
 locale.setlocale(locale.LC_ALL, 'ja_JP.UTF-8')  # Set the locale to Japanese
 formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
 
-# Create the "outputs" subfolder if it doesn't exist
+# Get the directory of the current script
+script_directory_path = os.path.dirname(os.path.realpath(__file__))
+# Change the current working directory to the script's directory FIRST
+os.chdir(script_directory_path)
+
+# Now create the "outputs" subfolder relative to the script's directory (which is now CWD)
 output_folder = "outputs"
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
@@ -68,10 +73,10 @@ genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
 client_gemini = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
 
 # Get the directory of the current script
-directory_path = os.path.dirname(os.path.realpath(__file__))
+# directory_path = os.path.dirname(os.path.realpath(__file__))
 
 # Change the current working directory to the script's directory
-os.chdir(directory_path)
+# os.chdir(directory_path) # This is now done earlier
     
 # Define headers for web requests
 headers = {
