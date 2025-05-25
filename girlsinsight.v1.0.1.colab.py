@@ -566,6 +566,14 @@ HTML: {str(page_source)[:8000]}"""
         print("Warning: Could not extract next page link")
         return "null"
         
+    except ValueError as e:
+        # Specifically catch the ValueError from Gemini API
+        if "finish_reason" in str(e) and "is 2" in str(e):
+            print("Warning: Gemini API hit token limit error in get_nextpage_link")
+            return "null"
+        else:
+            print(f"Warning: Gemini API ValueError in get_nextpage_link: {str(e)}")
+            return "null"
     except Exception as e:
         print(f"Warning: Error extracting next page link: {str(e)}")
         return "null"
@@ -622,6 +630,14 @@ Text: {page_text}"""
         print("Warning: Could not parse Gemini response, assuming active")
         return "active"
         
+    except ValueError as e:
+        # Specifically catch the ValueError from Gemini API
+        if "finish_reason" in str(e) and "is 2" in str(e):
+            print("Warning: Gemini API hit token limit error, assuming active")
+            return "active"
+        else:
+            print(f"Warning: Gemini API ValueError: {str(e)}, assuming active")
+            return "active"
     except Exception as e:
         print(f"Warning: Error in check_news_story_status: {str(e)}, assuming active")
         return "active"
