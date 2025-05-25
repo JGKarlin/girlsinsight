@@ -669,11 +669,14 @@ def summarize_article_with_gemini(article_text, language_selection):
     # Create the prompt
     prompt = f"""You are an expert content creator specializing in {language} summaries.
 
-In {language}, please provide a detailed and engaging summary of the following:
+In {language}, please provide a detailed and engaging summary focusing ONLY on the main topic: {header}.
 
+Here is the article text:
 {article_text}
 
-In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instructions in your response."""
+Your summary should highlight notable details, quotations, and/or statistics about {header} while aiming for a summary that's easy to read yet informative. 
+
+IMPORTANT: Only summarize content directly related to {header}. Do not include any other news items, entertainment news, unrelated stories, or content that appears after the main article. If the text contains multiple news stories, summarize ONLY the one about {header} and completely ignore all others. Do not create a 'news roundup' or include multiple topics. Do not reference these instructions in your response."""
 
     # Generate response
     response = model.generate_content(
@@ -801,7 +804,7 @@ def summarize_article_with_gpt(article_text, language_selection):
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": f"You are an expert content creator with a knack for providing concise yet captivating summaries in {language}."},
-                {"role": "user", "content": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instructions in your response."},
+                {"role": "user", "content": f"In {language}, please provide a detailed and engaging summary focusing ONLY on the main topic: {header}. Here is the article text: {article_text}. Your summary should highlight notable details, quotations, and/or statistics about {header} while aiming for a summary that's easy to read yet informative. IMPORTANT: Only summarize content directly related to {header}. Do not include any other news items, entertainment news, unrelated stories, or content that appears after the main article. If the text contains multiple news stories, summarize ONLY the one about {header} and completely ignore all others. Do not create a 'news roundup' or include multiple topics. Do not reference these instructions in your response."},
             ]
         )
         return response.choices[0].message.content
@@ -908,7 +911,7 @@ def summarize_article_with_anthropic(article_text, language_selection):
                     "content": [
                         {
                             "type": "text",
-                            "text": f"In {language}, please provide a detailed and engaging summary of the following: {article_text}. In your summary, highlight notable details, quotations, and/or statistics while aiming for a summary that's easy to read yet informative. If any additional unrelated news items, segments, warnings, alerts, stories, notifications, or advertisements arise, then ignore in your summary in favor of the primary topic: {header}. Do not reference these instructions in your response."
+                            "text": f"In {language}, please provide a detailed and engaging summary focusing ONLY on the main topic: {header}. Here is the article text: {article_text}. Your summary should highlight notable details, quotations, and/or statistics about {header} while aiming for a summary that's easy to read yet informative. IMPORTANT: Only summarize content directly related to {header}. Do not include any other news items, entertainment news, unrelated stories, or content that appears after the main article. If the text contains multiple news stories, summarize ONLY the one about {header} and completely ignore all others. Do not create a 'news roundup' or include multiple topics. Do not reference these instructions in your response."
                         }
                     ]
                 }
