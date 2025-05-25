@@ -540,15 +540,15 @@ Look for:
 HTML: {str(page_source)[:8000]}"""
 
     try:
-    # Generate response
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
+        # Generate response
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
                 max_output_tokens=100,  # Enough for a URL
                 temperature=0.0,
                 candidate_count=1,
+            )
         )
-    )
     
         # Check the response structure carefully
         if response.candidates:
@@ -591,14 +591,14 @@ Text: {page_text}"""
 
     try:
         # Generate response with minimal configuration
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
                 max_output_tokens=50,  # Increased from 10
                 temperature=0.0,
                 candidate_count=1,
+            )
         )
-    )
     
         # Try multiple ways to extract the response
         if response and response.candidates:
