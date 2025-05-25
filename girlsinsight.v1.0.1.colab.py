@@ -78,7 +78,7 @@ except:
 
 # Required API key for Gemini
 genai.configure(api_key=userdata.get('GEMINI_API_KEY'))
-client_gemini = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
+client_gemini = genai.GenerativeModel('gemini-2.0-flash-001')
 
 # Get the directory of the current script
 directory_path = os.path.dirname(os.path.realpath(__file__))
@@ -326,8 +326,8 @@ def search_wayback_machine(url, headers, max_retries=3, retry_delay=1):
         except (requests.RequestException, ValueError) as e:
             # Reduced verbosity for retries unless max_retries is hit
             if attempt < max_retries -1 : # try silently until the last attempt
-                 time.sleep(retry_delay)
-                 return make_request(search_url, attempt + 1)
+                time.sleep(retry_delay)
+                return make_request(search_url, attempt + 1)
             # On last attempt, print error if it fails
             if attempt == max_retries -1:
                 time.sleep(retry_delay)
@@ -391,7 +391,7 @@ def search_wayback_machine(url, headers, max_retries=3, retry_delay=1):
             except (IndexError, KeyError, TypeError):
                 # Silently skip malformed entries
                 continue
-    
+
     if valid_cdx_snapshots:
         valid_cdx_snapshots.sort(key=lambda s: s['timestamp']) # Sort oldest first
         # print(f"Debug: Found {len(valid_cdx_snapshots)} valid snapshots from CDX. Oldest: {valid_cdx_snapshots[0]['url']}")
@@ -527,7 +527,7 @@ def extract_text_from_url(all_urls, headers):
 #Analyze page for next page URL
 def get_nextpage_link(page_source):
     # Initialize the model
-    model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
+    model = genai.GenerativeModel('gemini-2.0-flash-001')
     
     # Create a shorter, more focused prompt
     prompt = f"""Find next page or full text link in HTML.
@@ -540,16 +540,16 @@ Look for:
 HTML: {str(page_source)[:8000]}"""
 
     try:
-        # Generate response
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
+    # Generate response
+    response = model.generate_content(
+        prompt,
+        generation_config=genai.GenerationConfig(
                 max_output_tokens=100,  # Enough for a URL
                 temperature=0.0,
                 candidate_count=1,
-            )
         )
-        
+    )
+    
         # Check the response structure carefully
         if response.candidates:
             candidate = response.candidates[0]
@@ -575,7 +575,7 @@ def check_news_story_status(url_to_process):
     page_source_for_analysis = get_page_source(gc_url)
     
     # Initialize the model
-    model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
+    model = genai.GenerativeModel('gemini-2.0-flash-001')
     
     # Extract just text content from HTML to reduce tokens
     try:
@@ -591,15 +591,15 @@ Text: {page_text}"""
 
     try:
         # Generate response with minimal configuration
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                max_output_tokens=10,  # Slightly more room
+    response = model.generate_content(
+        prompt,
+        generation_config=genai.GenerationConfig(
+                max_output_tokens=50,  # Increased from 10
                 temperature=0.0,
                 candidate_count=1,
-            )
         )
-        
+    )
+    
         # Try multiple ways to extract the response
         if response and response.candidates:
             candidate = response.candidates[0]
@@ -634,7 +634,7 @@ def summarize_article_with_gemini(article_text, language_selection):
     language = language_options.get(language_selection, "")
     
     # Initialize the model
-    model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
+    model = genai.GenerativeModel('gemini-2.0-flash-001')
     
     # Create the prompt
     prompt = f"""You are an expert content creator specializing in {language} summaries.
@@ -676,7 +676,7 @@ def summarize_topic_with_gemini(topcomment_text, language_selection):
     language = language_options.get(language_selection, "")
     
     # Initialize the model
-    model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
+    model = genai.GenerativeModel('gemini-2.0-flash-001')
     
     # Create the prompt
     prompt = f"""You are a social media analyst specializing in {language} content analysis.
@@ -719,7 +719,7 @@ def evaluate_sentiment_with_gemini(search_query, highest_sentiment_comments,
     language = language_options.get(language_selection, "")
     
     # Initialize the model inside the function
-    model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
+    model = genai.GenerativeModel('gemini-2.0-flash-001')
     
     # Create the prompt
     system_prompt = f"""You are a helpful Japanese assistant trained to analyze comments from the online forum GirlsChannel.net related to {search_query}. Your task is to write a comprehensive, cohesive essay in {language} that evaluates the sentiments expressed by the users. The essay should integrate the main themes, emotions, and attitudes present in the comments, providing a nuanced perspective on the overall community sentiment. Aim to write a well-structured essay of approximately 500 words, focusing on the predominant opinions while also considering dissenting views. The essay should flow smoothly, without being divided into distinct sections.
@@ -1653,7 +1653,7 @@ if __name__ == "__main__":
         news_story_status = None # Initialize
         source_to_display_for_summary = None # Will hold the primary URL associated with the article text
         wayback_url_actually_used = None # Specifically if a wayback URL was successfully used
-
+        
         # Check if the URL is not NaN
         if pd.notna(url_to_process):
             news_story_status = check_news_story_status(url_to_process)
@@ -1675,7 +1675,7 @@ if __name__ == "__main__":
                         wayback_url_actually_used = _found_archive_url # This archive was used
                 else:
                     print("ウェイバックマシンにアーカイブ版も見つかりませんでした。")
-           
+            
             if article_text:
                 summary = globals()[f"summarize_article_with_{summary_ai}"](article_text, language_selection)
                 print(file=output_file)
