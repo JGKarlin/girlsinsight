@@ -96,6 +96,26 @@ headers = {
     'Referer': 'https://www.google.com/'
 }
 
+# Safe wrapper for Gemini API calls
+def safe_gemini_call(model, prompt, generation_config):
+    """
+    Safely call Gemini API and handle all possible errors including token limit issues.
+    Returns (success, response_or_error_message)
+    """
+    try:
+        response = model.generate_content(prompt, generation_config=generation_config)
+        return True, response
+    except ValueError as e:
+        error_msg = str(e)
+        if "finish_reason" in error_msg and "is 2" in error_msg:
+            return False, "token_limit"
+        elif "finish_reason" in error_msg and "is 3" in error_msg:
+            return False, "safety"
+        else:
+            return False, f"value_error: {error_msg}"
+    except Exception as e:
+        return False, f"error: {str(e)}"
+
 class TopicCounter:
     plot_results_count = 1
     plot_comment_frequency_count = 1
@@ -539,17 +559,25 @@ Look for:
 
 HTML: {str(page_source)[:8000]}"""
 
-    try:
-        # Generate response
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                max_output_tokens=100,  # Enough for a URL
-                temperature=0.0,
-                candidate_count=1,
-            )
-        )
+    # Use safe wrapper for Gemini API call
+    generation_config = genai.GenerationConfig(
+        max_output_tokens=100,  # Enough for a URL
+        temperature=0.0,
+        candidate_count=1,
+    )
     
+    success, result = safe_gemini_call(model, prompt, generation_config)
+    
+    if not success:
+        if result == "token_limit":
+            print("Warning: Gemini hit token limit in get_nextpage_link")
+        else:
+            print(f"Warning: Gemini API error in get_nextpage_link: {result}")
+        return "null"
+    
+    # Process successful response
+    response = result
+    try:
         # Check the response structure carefully
         if response.candidates:
             candidate = response.candidates[0]
@@ -566,16 +594,8 @@ HTML: {str(page_source)[:8000]}"""
         print("Warning: Could not extract next page link")
         return "null"
         
-    except ValueError as e:
-        # Specifically catch the ValueError from Gemini API
-        if "finish_reason" in str(e) and "is 2" in str(e):
-            print("Warning: Gemini API hit token limit error in get_nextpage_link")
-            return "null"
-        else:
-            print(f"Warning: Gemini API ValueError in get_nextpage_link: {str(e)}")
-            return "null"
     except Exception as e:
-        print(f"Warning: Error extracting next page link: {str(e)}")
+        print(f"Warning: Error parsing response in get_nextpage_link: {str(e)}")
         return "null"
 
 def check_news_story_status(url_to_process):
@@ -597,25 +617,27 @@ def check_news_story_status(url_to_process):
     prompt = f"""Check if news deleted. Reply ONLY: active or inactive
 Text: {page_text}"""
 
-    try:
-        # Generate response with minimal configuration
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                max_output_tokens=50,  # Increased from 10
-                temperature=0.0,
-                candidate_count=1,
-            )
-        )
+    # Use safe wrapper for Gemini API call
+    generation_config = genai.GenerationConfig(
+        max_output_tokens=50,
+        temperature=0.0,
+        candidate_count=1,
+    )
     
-        # Try multiple ways to extract the response
+    success, result = safe_gemini_call(model, prompt, generation_config)
+    
+    if not success:
+        if result == "token_limit":
+            print("Warning: Gemini hit token limit in check_news_story_status, assuming active")
+        else:
+            print(f"Warning: Gemini API error in check_news_story_status: {result}, assuming active")
+        return "active"
+    
+    # Process successful response
+    response = result
+    try:
         if response and response.candidates:
             candidate = response.candidates[0]
-            
-            # Check finish reason first
-            if hasattr(candidate, 'finish_reason') and candidate.finish_reason == 2:
-                print("Warning: Gemini hit token limit, assuming active")
-                return "active"
             
             # Try to get content
             if hasattr(candidate, 'content') and candidate.content:
@@ -630,16 +652,8 @@ Text: {page_text}"""
         print("Warning: Could not parse Gemini response, assuming active")
         return "active"
         
-    except ValueError as e:
-        # Specifically catch the ValueError from Gemini API
-        if "finish_reason" in str(e) and "is 2" in str(e):
-            print("Warning: Gemini API hit token limit error, assuming active")
-            return "active"
-        else:
-            print(f"Warning: Gemini API ValueError: {str(e)}, assuming active")
-            return "active"
     except Exception as e:
-        print(f"Warning: Error in check_news_story_status: {str(e)}, assuming active")
+        print(f"Warning: Error parsing response in check_news_story_status: {str(e)}, assuming active")
         return "active"
 
 # Summarize article using Gemini models
