@@ -529,52 +529,43 @@ def get_nextpage_link(page_source):
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
     
-    # Create the prompt - no need to truncate with Gemini 2.5 Pro's large context
-    prompt = f"""You are an advanced HTML parser tasked with extracting specific URLs from HTML content. Your primary goal is to find either a 'full text' link or a 'next page' link for an article. Please follow these steps to analyze the HTML and extract the required URL:
+    # Create a shorter, more focused prompt
+    prompt = f"""Find next page or full text link in HTML.
+Return ONLY the URL or 'null'.
 
-1. Search for a 'full text' link:
-   - Look for links containing text or attributes related to 'full text' or '記事全文' (Japanese for 'full text of the article').
-   - If found, this link takes priority over any pagination links.
+Look for:
+- Full text links: 'full text', '記事全文'
+- Next page: 'next', 'next-page', '次', '続き'
 
-2. If no 'full text' link is found, check for pagination:
-   - Look for elements indicating that the article is split across multiple pages.
-   - Search for classes or IDs containing keywords like 'next', 'next-page', '次', or '続き'.
-   - Also, check for navigation arrows or sequential numbers that might indicate pagination.
-
-3. If neither a 'full text' link nor pagination is found, prepare to return 'null'.
-
-4. URL Handling:
-   - For any found URL, check if it's a relative URL (starts with '/' or doesn't contain 'http').
-   - If it's a relative URL, combine it with the base URL using the following rules:
-     a. If the URL starts with '/', append it to the base domain
-     b. If the URL is relative to the current path, resolve it against the current page URL
-   - Always return a complete, absolute URL
-
-Output Format:
-After your analysis, provide **only** one of the following:
-1. The URL of the 'full text' link (if found)
-2. The URL of the 'next page' link (if pagination is found)
-3. The word 'null' (if neither is found)
-
-Here is the HTML content you need to analyze: {page_source}"""
+HTML: {str(page_source)[:8000]}"""
 
     try:
         # Generate response
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
-                max_output_tokens=200,  # Increased to allow for full URLs
-                temperature=0.1,
+                max_output_tokens=100,  # Enough for a URL
+                temperature=0.0,
+                candidate_count=1,
             )
         )
         
-        # Check if response has valid text
-        if response.candidates and response.candidates[0].content.parts:
-            return response.text.strip()
-        else:
-            # If no valid response, return null
-            print("Warning: Could not extract next page link")
-            return "null"
+        # Check the response structure carefully
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                # Extract text from the first part
+                result = candidate.content.parts[0].text.strip()
+                return result
+            elif candidate.finish_reason:
+                # Handle specific finish reasons
+                print(f"Warning: Response finished with reason {candidate.finish_reason}")
+                return "null"
+        
+        # Default fallback
+        print("Warning: Could not extract next page link")
+        return "null"
+        
     except Exception as e:
         print(f"Warning: Error extracting next page link: {str(e)}")
         return "null"
@@ -587,38 +578,41 @@ def check_news_story_status(url_to_process):
     model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
     
     # Create a more concise prompt
-    prompt = f"""Analyze this HTML to check if the news story is deleted/removed/expired.
-Look for: error messages, '404', 'Page not found', '記事が見つかりません', 'expired'.
+    prompt = f"""Analyze HTML for deleted/expired news. Reply: active OR inactive
 
-Respond with ONLY ONE WORD:
-- active (if story exists)
-- inactive (if deleted/removed/expired)
-
-HTML: {str(page_source_for_analysis)[:5000]}"""
+HTML: {str(page_source_for_analysis)[:3000]}"""
 
     try:
         # Generate response with explicit token limit
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
-                max_output_tokens=10,  # Reduced since we only need one word
+                max_output_tokens=5,  # Even smaller for just one word
                 temperature=0.0,  # Make it deterministic
+                candidate_count=1,
             )
         )
         
-        # Check if response has valid text
-        if response.candidates and response.candidates[0].content.parts:
-            result = response.text.strip().lower()
-            # Ensure we only return valid responses
-            if result in ['active', 'inactive']:
-                return result
-            else:
-                print(f"Warning: Unexpected response '{result}', assuming active")
+        # Check the response structure more carefully
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                # Extract text from the first part
+                text = candidate.content.parts[0].text.strip().lower()
+                if text in ['active', 'inactive']:
+                    return text
+                else:
+                    print(f"Warning: Unexpected response '{text}', assuming active")
+                    return "active"
+            elif candidate.finish_reason:
+                # Handle specific finish reasons
+                print(f"Warning: Response finished with reason {candidate.finish_reason}, assuming active")
                 return "active"
-        else:
-            # If no valid response, assume active to continue processing
-            print("Warning: Could not determine news story status, assuming active")
-            return "active"
+        
+        # Default fallback
+        print("Warning: Could not determine news story status, assuming active")
+        return "active"
+        
     except Exception as e:
         print(f"Warning: Error checking news story status: {str(e)}, assuming active")
         return "active"
