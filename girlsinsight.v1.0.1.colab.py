@@ -529,6 +529,9 @@ def get_nextpage_link(page_source):
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
     
+    # Truncate the HTML content to avoid token limits
+    html_content = str(page_source)[:10000]  # Limit to first 10k characters
+    
     # Create the prompt
     prompt = f"""You are an advanced HTML parser tasked with extracting specific URLs from HTML content. Your primary goal is to find either a 'full text' link or a 'next page' link for an article. Please follow these steps to analyze the HTML and extract the required URL:
 
@@ -556,18 +559,28 @@ After your analysis, provide **only** one of the following:
 2. The URL of the 'next page' link (if pagination is found)
 3. The word 'null' (if neither is found)
 
-Here is the HTML content you need to analyze: {page_source}"""
+Here is the HTML content you need to analyze: {html_content}"""
 
-    # Generate response
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
-            max_output_tokens=500,
-            temperature=0.1,
+    try:
+        # Generate response
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                max_output_tokens=500,
+                temperature=0.1,
+            )
         )
-    )
-    
-    return response.text.strip()
+        
+        # Check if response has valid text
+        if response.candidates and response.candidates[0].content.parts:
+            return response.text.strip()
+        else:
+            # If no valid response, return null
+            print("Warning: Could not extract next page link")
+            return "null"
+    except Exception as e:
+        print(f"Warning: Error extracting next page link: {str(e)}")
+        return "null"
 
 def check_news_story_status(url_to_process):
     gc_url = url_to_process
@@ -576,23 +589,36 @@ def check_news_story_status(url_to_process):
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
     
+    # Truncate the HTML content to avoid token limits
+    html_content = str(page_source_for_analysis)[:10000]  # Limit to first 10k characters
+    
     # Create the prompt
     prompt = f"""You are an HTML parser.
 
 Please analyze the following HTML source to determine if the news story has been deleted, removed, or expired. Look for indicators such as error messages, '404' status codes, or specific phrases like 'Page not found', '記事が見つかりません', or 'expired'. If the news story is still available, respond with 'active'. If it has been deleted, removed, or expired, respond with 'inactive'. Respond only with either 'active' or 'inactive'.
 
-HTML Content: {page_source_for_analysis}"""
+HTML Content: {html_content}"""
 
-    # Generate response
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
-            max_output_tokens=50,
-            temperature=0.1,
+    try:
+        # Generate response with explicit token limit
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                max_output_tokens=50,
+                temperature=0.1,
+            )
         )
-    )
-    
-    return response.text.strip()
+        
+        # Check if response has valid text
+        if response.candidates and response.candidates[0].content.parts:
+            return response.text.strip()
+        else:
+            # If no valid response, assume active to continue processing
+            print("Warning: Could not determine news story status, assuming active")
+            return "active"
+    except Exception as e:
+        print(f"Warning: Error checking news story status: {str(e)}, assuming active")
+        return "active"
 
 # Summarize article using Gemini models
 import google.generativeai as genai
