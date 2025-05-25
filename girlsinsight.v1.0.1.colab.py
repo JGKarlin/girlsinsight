@@ -577,44 +577,53 @@ def check_news_story_status(url_to_process):
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
     
-    # Create a more concise prompt
-    prompt = f"""Analyze HTML for deleted/expired news. Reply: active OR inactive
-
-HTML: {str(page_source_for_analysis)[:3000]}"""
+    # Extract just text content from HTML to reduce tokens
+    try:
+        soup = BeautifulSoup(str(page_source_for_analysis), 'html.parser')
+        # Look for common error indicators in text
+        page_text = soup.get_text()[:1000]  # Just first 1000 chars of text
+    except:
+        page_text = str(page_source_for_analysis)[:1000]
+    
+    # Create an even simpler prompt
+    prompt = f"""Check if news deleted. Reply ONLY: active or inactive
+Text: {page_text}"""
 
     try:
-        # Generate response with explicit token limit
+        # Generate response with minimal configuration
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
-                max_output_tokens=5,  # Even smaller for just one word
-                temperature=0.0,  # Make it deterministic
+                max_output_tokens=10,  # Slightly more room
+                temperature=0.0,
                 candidate_count=1,
             )
         )
         
-        # Check the response structure more carefully
-        if response.candidates:
+        # Try multiple ways to extract the response
+        if response and response.candidates:
             candidate = response.candidates[0]
-            if candidate.content and candidate.content.parts:
-                # Extract text from the first part
-                text = candidate.content.parts[0].text.strip().lower()
-                if text in ['active', 'inactive']:
-                    return text
-                else:
-                    print(f"Warning: Unexpected response '{text}', assuming active")
-                    return "active"
-            elif candidate.finish_reason:
-                # Handle specific finish reasons
-                print(f"Warning: Response finished with reason {candidate.finish_reason}, assuming active")
+            
+            # Check finish reason first
+            if hasattr(candidate, 'finish_reason') and candidate.finish_reason == 2:
+                print("Warning: Gemini hit token limit, assuming active")
                 return "active"
+            
+            # Try to get content
+            if hasattr(candidate, 'content') and candidate.content:
+                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                    text = candidate.content.parts[0].text.strip().lower()
+                    if 'inactive' in text:
+                        return "inactive"
+                    else:
+                        return "active"
         
-        # Default fallback
-        print("Warning: Could not determine news story status, assuming active")
+        # If we can't get a proper response, assume active
+        print("Warning: Could not parse Gemini response, assuming active")
         return "active"
         
     except Exception as e:
-        print(f"Warning: Error checking news story status: {str(e)}, assuming active")
+        print(f"Warning: Error in check_news_story_status: {str(e)}, assuming active")
         return "active"
 
 # Summarize article using Gemini models
@@ -645,7 +654,19 @@ In your summary, highlight notable details, quotations, and/or statistics while 
         )
     )
     
-    return response.text
+    # Handle response properly without using .text accessor
+    try:
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                return candidate.content.parts[0].text
+            elif candidate.finish_reason:
+                print(f"Warning: Gemini response finished with reason {candidate.finish_reason}")
+                return "要約を生成できませんでした。"
+        return "要約を生成できませんでした。"
+    except Exception as e:
+        print(f"Warning: Error extracting Gemini response: {str(e)}")
+        return "要約を生成できませんでした。"
 
 # Summarize topic using Gemini models
 import google.generativeai as genai
@@ -677,7 +698,19 @@ Provide a clear, concise analysis that focuses on the overall meaning and likely
         )
     )
     
-    return response.text
+    # Handle response properly without using .text accessor
+    try:
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                return candidate.content.parts[0].text
+            elif candidate.finish_reason:
+                print(f"Warning: Gemini response finished with reason {candidate.finish_reason}")
+                return "要約を生成できませんでした。"
+        return "要約を生成できませんでした。"
+    except Exception as e:
+        print(f"Warning: Error extracting Gemini response: {str(e)}")
+        return "要約を生成できませんでした。"
 
 def evaluate_sentiment_with_gemini(search_query, highest_sentiment_comments, 
                                  lowest_sentiment_comments, language_selection, 
@@ -710,7 +743,20 @@ Score: <0-10>"""
 
     # Generate response
     response = model.generate_content(system_prompt)
-    return response.text
+    
+    # Handle response properly without using .text accessor
+    try:
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                return candidate.content.parts[0].text
+            elif candidate.finish_reason:
+                print(f"Warning: Gemini response finished with reason {candidate.finish_reason}")
+                return "感情分析を完了できませんでした。\n\nSentiment: neutral\nScore: 5"
+        return "感情分析を完了できませんでした。\n\nSentiment: neutral\nScore: 5"
+    except Exception as e:
+        print(f"Warning: Error extracting Gemini response: {str(e)}")
+        return "感情分析を完了できませんでした。\n\nSentiment: neutral\nScore: 5"
 
 def summarize_article_with_gpt(article_text, language_selection):
     if client_gpt is None:
