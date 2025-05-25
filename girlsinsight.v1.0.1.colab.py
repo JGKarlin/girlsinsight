@@ -529,10 +529,7 @@ def get_nextpage_link(page_source):
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
     
-    # Truncate the HTML content to avoid token limits
-    html_content = str(page_source)[:10000]  # Limit to first 10k characters
-    
-    # Create the prompt
+    # Create the prompt - no need to truncate with Gemini 2.5 Pro's large context
     prompt = f"""You are an advanced HTML parser tasked with extracting specific URLs from HTML content. Your primary goal is to find either a 'full text' link or a 'next page' link for an article. Please follow these steps to analyze the HTML and extract the required URL:
 
 1. Search for a 'full text' link:
@@ -559,14 +556,14 @@ After your analysis, provide **only** one of the following:
 2. The URL of the 'next page' link (if pagination is found)
 3. The word 'null' (if neither is found)
 
-Here is the HTML content you need to analyze: {html_content}"""
+Here is the HTML content you need to analyze: {page_source}"""
 
     try:
         # Generate response
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
-                max_output_tokens=500,
+                max_output_tokens=200,  # Increased to allow for full URLs
                 temperature=0.1,
             )
         )
@@ -589,29 +586,35 @@ def check_news_story_status(url_to_process):
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-pro-preview-05-06')
     
-    # Truncate the HTML content to avoid token limits
-    html_content = str(page_source_for_analysis)[:10000]  # Limit to first 10k characters
-    
-    # Create the prompt
-    prompt = f"""You are an HTML parser.
+    # Create a more concise prompt
+    prompt = f"""Analyze this HTML to check if the news story is deleted/removed/expired.
+Look for: error messages, '404', 'Page not found', '記事が見つかりません', 'expired'.
 
-Please analyze the following HTML source to determine if the news story has been deleted, removed, or expired. Look for indicators such as error messages, '404' status codes, or specific phrases like 'Page not found', '記事が見つかりません', or 'expired'. If the news story is still available, respond with 'active'. If it has been deleted, removed, or expired, respond with 'inactive'. Respond only with either 'active' or 'inactive'.
+Respond with ONLY ONE WORD:
+- active (if story exists)
+- inactive (if deleted/removed/expired)
 
-HTML Content: {html_content}"""
+HTML: {str(page_source_for_analysis)[:5000]}"""
 
     try:
         # Generate response with explicit token limit
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
-                max_output_tokens=50,
-                temperature=0.1,
+                max_output_tokens=10,  # Reduced since we only need one word
+                temperature=0.0,  # Make it deterministic
             )
         )
         
         # Check if response has valid text
         if response.candidates and response.candidates[0].content.parts:
-            return response.text.strip()
+            result = response.text.strip().lower()
+            # Ensure we only return valid responses
+            if result in ['active', 'inactive']:
+                return result
+            else:
+                print(f"Warning: Unexpected response '{result}', assuming active")
+                return "active"
         else:
             # If no valid response, assume active to continue processing
             print("Warning: Could not determine news story status, assuming active")
