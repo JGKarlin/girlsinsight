@@ -314,7 +314,10 @@
         "message": "Geminiが混み合っていて応答できません。混雑時は無料枠のリクエストから先に断られます。数分後にもう一度お試しください。"
     },
     "geminiBusyRetrying": {
-        "message": "Geminiが混み合っています。再試行しています…"
+        "message": "$1が混み合っています。再試行しています（$3回中$2回目）…"
+    },
+    "geminiBusyRetryingWithModel": {
+        "message": "$1が混み合っています。$2で再試行しています（$4回中$3回目）…"
     },
     "prepaidCreditsDepleted": {
         "message": "このAPIキーのGoogleプロジェクトはプリペイド課金で、クレジットが残っていません。Google AI Studioでクレジットを追加するか、無料枠を使うには課金を設定していない新しいプロジェクトのキーをお使いください。"

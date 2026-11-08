@@ -112,6 +112,11 @@ const i18n = {
     }
 };
 
+// "gemini-3.6-flash" -> "Gemini 3.6 Flash", for messages people read.
+function modelDisplayName(model) {
+    return String(model).split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
 class GirlsinSightBackground {
     constructor() {
         this.settings = {};
@@ -1551,11 +1556,16 @@ Score: <0-10>`;
                 if (error.retryable === false || attempt === maxAttempts) throw error;
                 if (error.code === 'BUSY') {
                     // Free-tier traffic is shed first, and the newest model is the
-                    // busiest. Move to the next model for this and later requests.
+                    // busiest. Move to the next model for this and later requests,
+                    // and say so, with the try that comes next.
+                    const busyModel = modelDisplayName(model);
                     const models = this.geminiModels || [];
                     const next = models[models.indexOf(model) + 1];
                     if (next) model = this.geminiModel = next;
-                    this.sendProgress(i18n.getMessage('geminiBusyRetrying'), this.activeAnalysisId);
+                    this.sendProgress(next
+                        ? i18n.getMessage('geminiBusyRetryingWithModel', [busyModel, modelDisplayName(next), attempt + 1, maxAttempts])
+                        : i18n.getMessage('geminiBusyRetrying', [busyModel, attempt + 1, maxAttempts]),
+                    this.activeAnalysisId);
                 }
                 await this.delayWithSignal(error.retryAfterMs ?? 1000 * attempt, signal);
             }

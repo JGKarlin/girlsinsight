@@ -405,14 +405,29 @@ test('when the main model is too busy the next try uses the fallback model and t
     assert.ok(harness.geminiRequests.some(r => r.model === 'gemini-3.6-flash'), 'the fallback model was used');
 });
 
-test('while Gemini is busy the panel says it is trying again', async () => {
+const progressTexts = harness => harness.runtimeMessages.filter(m => m.action === 'analysisProgress').map(m => m.message);
+
+test('while Gemini is busy the panel names the busy model, the model it tries next and the try number', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
         gemini: request => (request.model === 'gemini-3.8-flash' ? overloaded() : geminiText('A summary.')),
     });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
-    assert.ok(harness.runtimeMessages.some(m => m.action === 'analysisProgress' && m.message === en.geminiBusyRetrying.message));
+    assert.ok(progressTexts(harness).includes('Gemini 3.8 Flash is busy. Trying again with Gemini 3.6 Flash (try 2 of 3)…'),
+        JSON.stringify(progressTexts(harness)));
+});
+
+test('when no other model is left, the busy message says which try comes next', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        models: [{ name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] }],
+        gemini: overloaded,
+    });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.ok(progressTexts(harness).includes('Gemini 3.8 Flash is busy. Trying again (try 3 of 3)…'),
+        JSON.stringify(progressTexts(harness)));
 });
 
 test('a busy spell that does not clear is reported as Gemini being busy', async () => {
