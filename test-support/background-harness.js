@@ -213,7 +213,8 @@ async function loadBackground({
     const background = vm.runInContext('new GirlsinSightBackground()', context);
     await new Promise(resolve => setTimeout(resolve, 0)); // let initialize() settle
 
-    return { background, chrome, runtimeMessages, geminiRequests, modelListRequests, timerDelays, consoleLogs };
+    const tabMessages = []; // messages sent to the content script by runFullAnalysis
+    return { background, chrome, runtimeMessages, tabMessages, geminiRequests, modelListRequests, timerDelays, consoleLogs };
 }
 
 /**
@@ -225,6 +226,7 @@ async function runFullAnalysis(harness, { comments, settings, analysisId = 'test
     const { background, chrome } = harness;
     const tabId = 7;
     chrome.tabs.sendMessage = async (targetTab, message) => {
+        harness.tabMessages.push(message);
         if (message.action !== 'startPhasedExtraction') return { success: true };
         const sender = { tab: { id: targetTab } };
         setTimeout(() => {

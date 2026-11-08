@@ -40,6 +40,10 @@ const DRAFT_INTERVAL_MS = 300;
 const DEFAULT_COMMENTS_TO_ANALYZE = 30;
 // Finished analyses kept in local storage, one per topic, newest first.
 const MAX_SAVED_ANALYSES = 5;
+// Gemini errors that no later request in the run can get past: a rejected key,
+// or a Prepay project whose credits are used up (Google blocks such a project
+// outright instead of falling back to the free tier).
+const RUN_ENDING_ERROR_CODES = ['API_KEY', 'PREPAID_CREDITS_DEPLETED'];
 
 const i18n = {
     messages: {},
@@ -704,6 +708,8 @@ class GirlsinSightBackground {
             }
             console.error('Full analysis failed:', error);
             chrome.runtime.sendMessage({ action: 'analysisFailed', analysisId, error: error.message });
+            // The content script may still be reading later pages; stop it.
+            await this.abortAnalysis({ analysisId, tabId });
             return { success: false, analysisId, error: error.message };
         } finally {
             this.analysisPromises.delete(analysisId);
@@ -1079,11 +1085,9 @@ ${topComment.slice(0, 1000)}`;
             
         } catch (error) {
             if (error.name === 'AbortError') throw error;
+            // The sentiment request would fail the same way, so end the run here.
+            if (RUN_ENDING_ERROR_CODES.includes(error.code)) throw error;
             console.error('Error generating summary:', error);
-            // Return a cleaner error message for API key issues
-            if (error.message === i18n.getMessage('apiKeyInvalid')) {
-                return i18n.getMessage('apiKeyInvalid');
-            }
             return i18n.getMessage('summaryGenerationFailed') || `Summary could not be generated: ${error.message}`;
         }
     }
@@ -1177,7 +1181,7 @@ Score: <0-10>`;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('Error analyzing sentiment:', error);
-            const knownMessages = [i18n.getMessage('apiKeyInvalid'), i18n.getMessage('rateLimited')];
+            const knownMessages = ['apiKeyInvalid', 'rateLimited', 'prepaidCreditsDepleted'].map(key => i18n.getMessage(key));
             const details = error.code === 'MAX_TOKENS'
                 ? i18n.getMessage('sentimentIncomplete')
                 : knownMessages.includes(error.message)
@@ -1528,7 +1532,11 @@ Score: <0-10>`;
             [400, 401, 403].includes(apiError.code) &&
             (String(apiError.message || '').includes('API key') ||
              details.some(detail => String(detail.reason || '').startsWith('API_KEY')));
-        if (isKeyError) return this.geminiError(i18n.getMessage('apiKeyInvalid'));
+        if (isKeyError) return this.geminiError(i18n.getMessage('apiKeyInvalid'), { code: 'API_KEY' });
+
+        if (response.status === 402) {
+            return this.geminiError(i18n.getMessage('prepaidCreditsDepleted'), { code: 'PREPAID_CREDITS_DEPLETED' });
+        }
 
         if (response.status === 429) {
             const retryInfo = details.find(detail => String(detail['@type'] || '').endsWith('RetryInfo'));

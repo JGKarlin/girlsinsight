@@ -293,7 +293,7 @@
         "message": "<strong>Googleアカウントでサインイン：</strong>既存のGoogleアカウントでログインします。別途「Geminiアカウント」は不要です。"
     },
     "modalStep3": {
-        "message": "<strong>APIキーを生成：</strong>ログイン後、「APIキーを取得」ボタンをクリックし、既存または新規プロジェクト内で新しいキーを作成します。"
+        "message": "<strong>APIキーを生成：</strong>「APIキーを取得」をクリックし、<strong>新しいプロジェクト</strong>でキーを作成します。課金を設定していない新しいプロジェクトは無料枠で利用できます。"
     },
     "modalStep4": {
         "message": "<strong>Geminiアカウントは不要：</strong>Gemini APIへのアクセスはGoogleアカウントで管理されます。"
@@ -302,10 +302,10 @@
         "message": "<strong>初期費用は不要：</strong>支払い情報を入力せずにGemini APIの利用を開始できます。"
     },
     "modalStep6": {
-        "message": "<strong>無料枠を利用：</strong>無料枠には1日あたり25件のリクエスト制限があります。"
+        "message": "<strong>無料枠を利用：</strong>1日あたりの無料枠はモデルによって異なり、Google AI Studioで確認できます。1回の分析で使うリクエストは約2件です。"
     },
     "modalStep7": {
-        "message": "<strong>必要に応じてアップグレード：</strong>無料枠を超える場合は、請求先アカウントを設定して有料プランにアップグレードすると、より高いレート制限が適用されます。"
+        "message": "<strong>必要に応じてアップグレード：</strong>無料枠を超える場合は、請求先アカウントを設定して有料プランにアップグレードすると、より高いレート制限が適用されます。課金を設定したプロジェクトはプリペイドのクレジットを使い、残高がなくなると停止します。無料枠には戻りません。"
     },
     "archivedCopyLabel": {
         "message": "アーカイブ版"
@@ -315,6 +315,9 @@
     },
     "rateLimited": {
         "message": "Geminiの利用制限に達しました。1分ほど待ってから、もう一度お試しください。"
+    },
+    "prepaidCreditsDepleted": {
+        "message": "このAPIキーのGoogleプロジェクトはプリペイド課金で、クレジットが残っていません。Google AI Studioでクレジットを追加するか、無料枠を使うには課金を設定していない新しいプロジェクトのキーをお使いください。"
     },
     "sentimentIncomplete": {
         "message": "分析が途中で切れてしまいました。もう一度お試しいただくか、分析するコメント数を減らしてください。"

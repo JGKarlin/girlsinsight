@@ -50,9 +50,9 @@ There is no build step. The extension runs directly from these files.
 
 ## Setup
 
-GirlsinSight uses your own Google Gemini API key. Usage is billed to that key under Google's terms.
+GirlsinSight uses your own Google Gemini API key. A key from a project without billing uses Gemini's free tier; a key from a project with billing is charged under Google's terms.
 
-1. Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey).
+1. Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey). For free use, create it in a **new project** and do not link billing to that project. A project with Prepay billing stops when its credits reach $0 and does not fall back to the free tier.
 2. Open a GirlsChannel page and click the GirlsinSight toolbar icon to open the side panel. You can also right-click the icon and choose **Settings**.
 3. Paste the key into **Gemini API Key** and click **Verify**. This checks the key and that it can use a supported Gemini model.
 4. Choose an output language and adjust the analysis settings if you want to.
@@ -177,7 +177,7 @@ All requests go directly from your browser to `https://generativelanguage.google
 
 **Model choice.** If the key cannot use `gemini-3.8-flash`, the newest stable `gemini-X.Y-flash` model it can use (3.6 or newer, the first versions that accept this request format) is used instead, so a future model retirement does not break the extension. A key with no such model is stopped at the start with a clear message.
 
-**Retries.** A request is tried up to three times, but only when a retry can help: network errors and server errors (waiting 1 second, then 2), and rate limits, which wait as long as Gemini asks (up to 30 seconds; a longer wait is reported at once). An invalid key, a missing model, a refused request, a blocked or safety-stopped reply, or a reply cut off at the token limit fails at once, since repeating it would cost tokens without changing the outcome. A reply cut off at the token limit is never shown as if it were complete.
+**Retries.** A request is tried up to three times, but only when a retry can help: network errors and server errors (waiting 1 second, then 2), and rate limits, which wait as long as Gemini asks (up to 30 seconds; a longer wait is reported at once). An invalid key, depleted prepaid credits, a missing model, a refused request, a blocked or safety-stopped reply, or a reply cut off at the token limit fails at once, since repeating it would cost tokens without changing the outcome. A reply cut off at the token limit is never shown as if it were complete. If the first request (the summary) finds the key invalid or its prepaid credits depleted, the run stops there, since the sentiment request would fail the same way.
 
 **Request format.** Sampling parameters such as `temperature` are not sent, because current models ignore them. The four adjustable safety filters (harassment, hate speech, sexually explicit, dangerous content) are set explicitly to `OFF`, so a change to Google's defaults cannot start refusing ordinary forum threads; each prompt also states that the task is research. Every request is sent with `store: false`, which keeps it out of your AI Studio project's request logs, a paid-tier feature that new paid projects turn on by default. It does not change how Google otherwise handles API data under its terms.
 
@@ -328,6 +328,7 @@ GitHub Actions runs the suite on every push and pull request (`.github/workflows
 | "Please configure your Gemini API key" or "API key required" | Add a Gemini API key in Settings and click **Verify**. |
 | "API key is invalid or network error" | Make sure the key is active in Google AI Studio, has quota left and that you are online. |
 | "This API key can't use Gemini 3.6 Flash or newer" | The key's project does not offer a supported model. Create a key in a project that does, in Google AI Studio. |
+| "This API key's Google project uses prepaid billing and its credits have run out" | The key belongs to a project with Prepay billing and a $0 balance; Google blocks such a project instead of moving it to the free tier. Add credits in Google AI Studio, or create a key in a new project without billing and use that. |
 | "Gemini's rate limit was reached" | Wait a minute and run the analysis again. Free-tier keys have low per-minute limits. |
 | "The analysis was cut off before it finished" | Gemini used its whole output budget. Run it again, or lower **Comments to analyze**. |
 | The side panel does not open | The panel turns off for a tab that has left GirlsChannel. Open a topic page in that tab, or reload it, and try again. |

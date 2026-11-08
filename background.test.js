@@ -277,10 +277,15 @@ test('the sentiment essay is streamed to the panel as it is written', async () =
 
 const errorBody = (code, status, message, details = []) => ({ error: { code, status, message, details } });
 
+const invalidKey = () => jsonResponse(400, errorBody(400, 'INVALID_ARGUMENT',
+    'API key not valid. Please pass a valid API key.',
+    [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID', domain: 'googleapis.com' }]));
+// What Gemini answers when the key's project uses Prepay billing and the
+// balance is $0. Such a project is blocked; it does not fall back to the free tier.
+const creditsDepleted = () => jsonResponse(402, errorBody(402, 'RESOURCE_EXHAUSTED',
+    'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.'));
+
 test('an invalid API key fails at once with the localized invalid-key message', async () => {
-    const invalidKey = () => jsonResponse(400, errorBody(400, 'INVALID_ARGUMENT',
-        'API key not valid. Please pass a valid API key.',
-        [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID', domain: 'googleapis.com' }]));
     const harness = await loadBackground({ sync: { language: 'en', geminiApiKey: 'bad' }, gemini: invalidKey });
 
     await assert.rejects(harness.background.callGeminiAPI('prompt'), { message: en.apiKeyInvalid.message });
@@ -318,6 +323,39 @@ test('a rate limit that asks for a long wait fails at once with the rate-limit m
 
     await assert.rejects(harness.background.callGeminiAPI('prompt'), { message: en.rateLimited.message });
     assert.equal(harness.geminiRequests.length, 1);
+});
+
+test('depleted prepaid credits (402) fail at once with a message that points to the free tier', async () => {
+    const harness = await loadBackground({ sync: { language: 'en', geminiApiKey: 'k' }, gemini: creditsDepleted });
+
+    await assert.rejects(harness.background.callGeminiAPI('prompt'), { message: en.prepaidCreditsDepleted.message });
+    assert.equal(harness.geminiRequests.length, 1);
+});
+
+for (const [name, reply, messageKey] of [
+    ['depleted prepaid credits', creditsDepleted, 'prepaidCreditsDepleted'],
+    ['a rejected API key', invalidKey, 'apiKeyInvalid'],
+]) {
+    test(`${name} at the summary request ends the run before the sentiment request`, async () => {
+        const harness = await loadBackground({ sync: { language: 'en' }, gemini: reply });
+        const { result, sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+        assert.equal(result.success, false);
+        assert.equal(harness.geminiRequests.filter(isSentimentRequest).length, 0, 'no sentiment request was sent');
+        assert.equal(sentiment, undefined);
+        const failure = harness.runtimeMessages.find(message => message.action === 'analysisFailed');
+        assert.equal(failure && failure.error, en[messageKey].message);
+        assert.ok(harness.tabMessages.some(message => message.action === 'abortExtraction'),
+            'the content script was told to stop reading pages');
+    });
+}
+
+test('credits that run out at the sentiment request are named in the sentiment result', async () => {
+    const harness = await loadBackground({ sync: { language: 'en' }, gemini: scriptedGemini(creditsDepleted) });
+    const { sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.equal(sentiment.score, null);
+    assert.equal(sentiment.details, en.prepaidCreditsDepleted.message);
 });
 
 for (const [name, reply] of [
