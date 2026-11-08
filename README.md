@@ -2,7 +2,7 @@
 
 GirlsinSight is a Chrome extension that reads a [GirlsChannel](https://girlschannel.net/) (ガールズちゃんねる) topic and explains what the community thinks about it. It collects every comment in the thread, works out where users agree and where they are divided, and asks Google Gemini to write a qualitative sentiment analysis that weighs the most upvoted comments against the most downvoted ones. It is built for academic, journalistic, market and sociocultural research.
 
-**[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/girlsinsight/bbfnanleibeenpgheblpplenipaeamkp)** · Version 1.4.0 · Manifest V3 · Japanese and English
+**[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/girlsinsight/bbfnanleibeenpgheblpplenipaeamkp)** · Version 1.5.0 · Manifest V3 · Japanese and English
 
 ## Contents
 
@@ -29,9 +29,9 @@ GirlsinSight runs in Chrome's side panel next to the topic you are reading. Each
 | **Summary** | A summary of the news article linked in the topic's opening post, with a link to the source (or to an archived copy if the original is gone). If no article can be read, Gemini instead interprets the topic title and opening post. |
 | **Statistics** | Comment counts, a consensus score, a controversy score, an activity score and how long the topic has been running. |
 | **Top and bottom comments** | The most upvoted and most downvoted comments, with vote counts and dates. Long comments are shortened to 200 characters, and image-only comments are shown as images. |
-| **Sentiment analysis** | A roughly 500-word essay on community sentiment and its sociocultural context, plus an overall label (positive, neutral, negative) and a score from 0 to 10. |
+| **Sentiment analysis** | A roughly 500-word essay on community sentiment and its sociocultural context, plus an overall label (positive, neutral, negative) and a score from 0 to 10. The essay appears as Gemini writes it. If Gemini does not finish, the panel says so and shows no score rather than a guessed one. |
 
-When the analysis finishes, you can download everything as a formatted Excel workbook. Both the interface and Gemini's output can be in Japanese (the default) or English.
+When the analysis finishes, you can download everything as a formatted Excel workbook. The result is also saved, so reopening the side panel on that topic shows it again. Both the interface and Gemini's output can be in Japanese (the default) or English.
 
 ## Installation
 
@@ -54,27 +54,27 @@ GirlsinSight uses your own Google Gemini API key. Usage is billed to that key un
 
 1. Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey).
 2. Open a GirlsChannel page and click the GirlsinSight toolbar icon to open the side panel. You can also right-click the icon and choose **Settings**.
-3. Paste the key into **Gemini API Key** and click **Verify** to check it.
+3. Paste the key into **Gemini API Key** and click **Verify**. This checks the key and that it can use a supported Gemini model.
 4. Choose an output language and adjust the analysis settings if you want to.
 
-Settings save automatically as you change them.
+Settings save automatically as you change them. The API key is stored on this device only; the other settings sync with your Chrome profile.
 
 ## Using GirlsinSight
 
 1. Open any GirlsChannel topic page, for example `https://girlschannel.net/topics/1234567/`.
-2. Open the side panel. It shows the topic's title, comment count and post date.
+2. Open the side panel. It shows the topic's title, comment count and post date. You can start from any page of a topic; the analysis always reads it from page 1.
 3. Click **Analyze Topic**.
-4. Chrome asks whether GirlsinSight may access other websites, and keeps asking on each run until you allow it. This is how it opens the article linked in the topic. If you decline, the analysis still runs, but the summary is based only on the topic title and opening post.
-5. Watch the progress messages. The summary usually appears first, then the statistics and comment lists, then the sentiment essay, which takes longest.
+4. If the opening post links to an article, Chrome asks whether GirlsinSight may read that site and the Internet Archive (used when the link is dead). Once allowed, Chrome does not ask again for that site. If you decline, the analysis still runs, the summary is based only on the topic title and opening post, and the panel does not ask again until you reopen it.
+5. Watch the progress messages. The summary usually appears first, then the statistics and comment lists, then the sentiment essay, which is filled in as Gemini writes it.
 6. Click **Download Excel** to save the report.
 
-Click **Stop Analysis** at any time to cancel. The extension stops extracting, cancels pending Gemini requests and closes any article tab it opened. The side panel resets when you move to a different topic and turns off when the tab leaves GirlsChannel.
+Click **Stop Analysis** at any time to cancel. The extension stops extracting, cancels pending Gemini requests and closes any article tab it opened. Closing the side panel cancels a running analysis the same way. The side panel resets when you move to a different topic and turns off when the tab leaves GirlsChannel. When you come back to a topic you have analyzed, its saved result is shown with the time it was saved; click **Analyze Topic** to run a fresh one.
 
 ## Settings
 
 | Setting | Default | Range | Effect |
 |---|---|---|---|
-| Gemini API Key | none | | Required. Stored in Chrome sync storage. |
+| Gemini API Key | none | | Required. Stored in Chrome local storage on this device only (not synced). Keys saved by version 1.4 or earlier are moved there automatically. |
 | Output language | Japanese | Japanese, English | Language of the interface, the Gemini output and the Excel report. |
 | Auto comment calculation | On | | Picks how many comments to analyze from the size of the topic. See [Sample size](#sample-size). |
 | Comments to analyze | 30 | 5–1,000 | Total comments sent for sentiment analysis when auto calculation is off, split evenly between the most upvoted and most downvoted. |
@@ -88,11 +88,12 @@ Click **Stop Analysis** at any time to cancel. The extension stops extracting, c
 | File | Role |
 |---|---|
 | `manifest.json` | Manifest V3 configuration: permissions, side panel, service worker and content script. |
-| `background.js` | Service worker. Runs the analysis from start to finish: validates the API key, calls Gemini, computes statistics, retrieves articles and builds the Excel file. |
-| `content.js` | Content script injected into GirlsChannel pages. Reads topic metadata and comments from the page, follows pagination and fetches reply threads. |
+| `background.js` | Service worker. Runs the analysis from start to finish: checks the API key and picks a model, calls Gemini, computes statistics, retrieves articles, saves results and builds the Excel file. |
+| `content.js` | Content script injected into GirlsChannel pages. Reads topic metadata and comments, starting from the topic's first page, follows pagination and fetches reply threads. |
+| `girlschannel-parsing.js` | Shared helpers for GirlsChannel pages: topic page addresses, Japan-time dates and comment ordering. Used by the content script, the side panel and the service worker. |
 | `popup.html`, `popup.js`, `popup.css` | Side panel interface: settings, topic card, Analyze/Stop button, progress messages and download. |
 | `popup-react.js` | React components that render the results sections as partial results arrive. |
-| `article-pipeline.js` | Decides which linked URLs to try and in what order, combines multi-page articles and falls back to the Wayback Machine. |
+| `article-pipeline.js` | Decides which linked URLs to try and in what order, works out which sites to ask permission for, combines multi-page articles and falls back to the Wayback Machine. |
 | `rendered-article-session.js` | Loads each article in a hidden browser tab, waits for the page to finish rendering and extracts its text. |
 | `_locales/` | Japanese and English strings. |
 | `lib/` | Bundled third-party libraries: React, ReactDOM, Mozilla Readability and SheetJS. |
@@ -108,7 +109,7 @@ sequenceDiagram
     participant G as Gemini API
 
     P->>B: startFullAnalysis
-    B->>G: Validate API key
+    B->>G: Check key, pick model
     B->>C: startPhasedExtraction
     C-->>B: Title and opening post
     par Summary
@@ -122,22 +123,23 @@ sequenceDiagram
         C-->>B: All comments and activity
     end
     B-->>P: Statistics and top/bottom comments appear
-    B->>G: Sentiment request (gemini-3.8-flash, high thinking)
-    G-->>B: Essay and score
-    B-->>P: Sentiment appears, then analysisComplete
+    B->>G: Sentiment request (gemini-3.8-flash, high thinking, streamed)
+    G-->>B: Essay text as it is written
+    B-->>P: Essay draft fills in
+    B-->>P: Score and final essay, result saved, analysisComplete
 ```
 
-1. **Topic detection.** On any `girlschannel.net/topics/<id>/` page, the content script reads the title, comment count and post date and saves them so the side panel can show the topic card.
-2. **Start.** Clicking **Analyze Topic** requests optional site access, assigns the run a unique ID and passes the current settings to the service worker. Only one analysis runs at a time.
-3. **Key check.** The service worker confirms the API key by listing the available Gemini models. An invalid key stops the run with a clear message.
-4. **Opening post first.** The content script sends the topic title, URL, post date and opening post right away, so the summary can start while the rest of the thread is still being read.
+1. **Topic detection.** On any topic page (`/topics/<id>/` or a later page such as `/topics/<id>/2/`), the content script reads the title and comment count for the topic card. The post date and the article links come from the topic post, which is on page 1; on a later page, page 1 is fetched when the side panel opens.
+2. **Start.** Clicking **Analyze Topic** asks for access to the linked article's site (see [Permissions](#permissions)), assigns the run a unique ID, opens a connection that cancels the run if the panel closes, and passes the current settings to the service worker. Only one analysis runs at a time.
+3. **Key check.** The service worker lists the Gemini models the key can use and picks one (see [Gemini API usage](#gemini-api-usage)). An invalid key, or a key with no usable model, stops the run with a clear message before any comments are read.
+4. **Opening post first.** The content script loads page 1 if you are on a later page, then sends the topic title, page-1 URL, post date and opening post right away, so the summary can start while the rest of the thread is still being read.
 5. **Summary, in parallel.** If the opening post links to an external page and site access was granted, the [article pipeline](#article-retrieval) retrieves up to 15,000 characters of article text and Gemini summarizes it in under 300 words. Otherwise Gemini interprets the title and opening post in under 200 words.
-6. **Full extraction, in parallel.** The content script walks every page of the topic, fetching later pages through the service worker with a 200 ms pause between pages. For each comment it records the number, date, upvotes, downvotes, text and any links. An image-only comment is recorded as its image URL. If **Scrape replies** is on, reply threads are fetched five at a time with a 300 ms pause between batches. Comments are then de-duplicated, sorted by number and given an activity score.
+6. **Full extraction, in parallel.** The content script walks every page of the topic from page 1, fetching later pages through the service worker with a 200 ms pause between pages. For each comment it records the number, date (read as Japan time, which GirlsChannel uses), upvotes, downvotes, text and any links. An image-only comment is recorded as its image URL. If **Scrape replies** is on, reply threads are fetched five at a time with a 300 ms pause between batches. Comments are then de-duplicated, sorted by number with replies in order under their parent, and given an activity score.
 7. **Statistics.** Once both the summary and the extraction are done, the service worker drops empty comments, works out each comment's net score and upvote ratio, and sends the statistics and the top and bottom comment lists to the panel.
-8. **Sentiment.** The service worker chooses a sample of main comments (see [Sample size](#sample-size)): half from the top by net score and half from the bottom. Each comment is cut to 1,000 characters and labeled with its vote counts. Gemini is told to treat heavily upvoted comments as the majority view and heavily downvoted comments as views the community rejects. It writes a continuous essay of about 500 words and ends with a `Sentiment:` line and a `Score:` line. The extension reads those lines, makes sure the label agrees with the score (0–3 negative, 4–6 neutral, 7–10 positive) and removes them from the essay text.
-9. **Completion.** The panel shows the download button, and the complete results stay in memory for export.
+8. **Sentiment.** The service worker chooses a sample of main comments (see [Sample size](#sample-size)): half from the top by net score and half from the bottom. Each comment is cut to 1,000 characters and labeled with its vote counts. Gemini is told to treat heavily upvoted comments as the majority view and heavily downvoted comments as views the community rejects. It writes a continuous essay of about 500 words and ends with a `Sentiment:` line and a `Score:` line. The essay is streamed, so the panel fills it in as it arrives. The extension reads only those closing lines, sets the label from the score (0–3 negative, 4–6 neutral, 7–10 positive) and removes them from the essay text. If Gemini's reasoning uses up the output limit before the essay finishes, the request is tried once more with less reasoning. If it still cannot finish, or the essay has no score, the panel shows no score and says why.
+9. **Completion.** The result is saved in local storage (the five most recent topics are kept) and the panel shows the download button.
 
-Long runs keep the service worker alive with a lightweight ping every 20 seconds. Every step listens to one cancellation signal, so **Stop Analysis** takes effect wherever the run is.
+Long runs keep the service worker alive with a lightweight ping every 20 seconds. Every step listens to one cancellation signal, so **Stop Analysis**, or closing the panel, takes effect wherever the run is.
 
 ### Article retrieval
 
@@ -163,19 +165,21 @@ Text shorter than 180 characters is not treated as an article. Each page is capp
 
 ### Gemini API usage
 
-All requests go directly from your browser to `https://generativelanguage.googleapis.com/v1beta/`.
+All requests go directly from your browser to `https://generativelanguage.googleapis.com/v1beta/`. The API key is sent in the `x-goog-api-key` header, never in a URL.
 
 | Purpose | Model | Settings |
 |---|---|---|
-| API key check | | `GET /models` |
-| Summary | `gemini-3.8-flash` | thinking level `LOW`, up to 8,192 output tokens |
-| Sentiment essay | `gemini-3.8-flash` | thinking level `HIGH`, up to 64,000 output tokens |
+| API key check | | `GET /models` (lists the models the key can use) |
+| Summary | `gemini-3.8-flash` | `generateContent`, thinking level `LOW`, up to 8,192 output tokens |
+| Sentiment essay | `gemini-3.8-flash` | `streamGenerateContent`, thinking level `HIGH` (one retry at `MEDIUM` if cut off), up to 64,000 output tokens |
 
-`gemini-3.8-flash` is Google's recommended replacement for `gemini-2.5-pro`. It has a free tier, and its 65,536-token output limit (thinking included) fits the long essay. The summary uses low thinking so it appears quickly. The essay is the main result, so it uses the deepest thinking.
+`gemini-3.8-flash` is Google's recommended replacement for `gemini-2.5-pro`. It has a free tier, and its 65,536-token output limit (thinking included) fits the long essay. The summary uses low thinking so it appears quickly. The essay is the main result, so it uses the deepest thinking, and it is streamed so the panel can show it as it is written.
 
-Each request is tried up to three times, waiting 1 second and then 2 seconds between attempts. An invalid API key is reported at once, without retrying.
+**Model choice.** If the key cannot use `gemini-3.8-flash`, the newest stable `gemini-X.Y-flash` model it can use (3.6 or newer, the first versions that accept this request format) is used instead, so a future model retirement does not break the extension. A key with no such model is stopped at the start with a clear message.
 
-Requests follow the current API format. Sampling parameters such as `temperature` are not sent, because current models ignore them. Safety settings are left at Gemini's defaults, under which the adjustable filters are off for current models. Each prompt states that the task is research, because forum comments often discuss sensitive subjects. Every request is sent with `store: false`, so Google does not save it in your AI Studio project's request logs. New paid-tier projects turn those logs on by default.
+**Retries.** A request is tried up to three times, but only when a retry can help: network errors and server errors (waiting 1 second, then 2), and rate limits, which wait as long as Gemini asks (up to 30 seconds; a longer wait is reported at once). An invalid key, a missing model, a refused request, a blocked or safety-stopped reply, or a reply cut off at the token limit fails at once, since repeating it would cost tokens without changing the outcome. A reply cut off at the token limit is never shown as if it were complete.
+
+**Request format.** Sampling parameters such as `temperature` are not sent, because current models ignore them. The four adjustable safety filters (harassment, hate speech, sexually explicit, dangerous content) are set explicitly to `OFF`, so a change to Google's defaults cannot start refusing ordinary forum threads; each prompt also states that the task is research. Every request is sent with `store: false`, which keeps it out of your AI Studio project's request logs, a paid-tier feature that new paid projects turn on by default. It does not change how Google otherwise handles API data under its terms.
 
 ### Message flow
 
@@ -189,9 +193,10 @@ The side panel, service worker and content script communicate with `chrome.runti
 | `fetchPage` | content → worker | Fetch a later page or a reply thread. |
 | `allCommentsReady` | content → worker | Every comment plus the activity score, or an error. |
 | `extractionProgress`, `analysisProgress` | → panel | Status text for the progress line. |
-| `partialResults` | worker → panel | `summary`, `stats` or `sentiment` section data. |
+| `partialResults` | worker → panel | `summary`, `stats`, `sentimentDraft` (streamed essay text, at most every 300 ms) or `sentiment` section data. |
 | `analysisComplete`, `analysisFailed`, `analysisCancelled` | worker → panel | How the run ended. |
 | `abortAnalysis`, `abortExtraction` | panel → worker → content | Cancel the run. |
+| port `analysis:<id>` | panel → worker | Held open during a run; Chrome closes it with the panel, which cancels the run. |
 | `generateExcel` | panel → worker | Build and download the workbook. |
 | `urlChanged`, `showWelcomeScreen` | worker → panel | Reset the panel after navigation. |
 
@@ -232,7 +237,7 @@ Consensus, controversy and the sentiment sample use main comments only. When **S
 | 2 | at least 1 in the last 30 days | Dormant |
 | 1 | none in the last 30 days | Inactive |
 
-**Duration.** Time elapsed since the earliest comment.
+**Duration.** Time elapsed since the earliest comment. All comment times are read as Japan time, the time zone GirlsChannel displays, so these figures are correct wherever you are.
 
 **Top and bottom comments.** The panel lists the comments with the most upvotes and the most downvotes. The sentiment sample instead ranks comments by net score.
 
@@ -257,30 +262,33 @@ With auto calculation off, *n* is the **Comments to analyze** setting. Either wa
 **Download Excel** saves `girlsinsight_analysis_<timestamp>.xlsx`, and Chrome asks where to save it. The workbook is built inside the extension with SheetJS and has two sheets, named in the output language:
 
 - **Report:** title, generation time, topic URL, article source (and archived copy, if one was used), summary, sentiment label, score and essay, all statistics, and the top and bottom comments.
-- **All comments:** every extracted comment in thread order, including replies if they were scraped, with number, date, upvotes, downvotes, net score, text, links and the topic title on the opening post.
+- **All comments:** every extracted comment in thread order, with replies in order under their parent if they were scraped, and number, date, upvotes, downvotes, net score, text, links and the topic title on the opening post.
+
+A comment whose date could not be read shows `-`. If the sentiment analysis did not finish, its label and score show `-`.
 
 ## Permissions
 
 | Permission | Why it is needed |
 |---|---|
 | `sidePanel` | Shows the interface in Chrome's side panel. |
-| `storage` | Saves settings (sync storage) and the current topic card (local storage). |
-| `tabs`, `activeTab` | Finds the GirlsChannel tab being analyzed and opens, drives and closes the hidden article tab. |
+| `storage` | Saves preferences (sync storage), and the API key, current topic card and recent results (local storage). |
+| `tabs` | Finds the GirlsChannel tab being analyzed and opens, drives and closes the hidden article tab. |
 | `scripting` | Injects Readability and the text extractor into the article tab. |
 | `downloads` | Saves the Excel report. |
 | `contextMenus` | Adds **Settings** to the toolbar icon's right-click menu. |
 | `girlschannel.net` | Reads topic pages and fetches later pages and reply threads. |
 | `generativelanguage.googleapis.com` | Calls the Gemini API. |
-| Optional: all `http`/`https` sites | Requested when you click **Analyze Topic**, so the linked article (or its archived copy) can be opened and read. You can decline it. |
+| Optional: the linked article's site and the Internet Archive | Requested when you click **Analyze Topic** and the opening post links to an article, for just that site plus `web.archive.org` and `archive.org`. You can decline it, and remove it later under `chrome://extensions` → GirlsinSight → **Details** → **Site access**. The manifest lists all `http`/`https` sites as optional only so that any article's site can be requested this way. |
 
 ## Privacy
 
 GirlsinSight has no server of its own and collects no analytics. When you run an analysis:
 
-- the topic title, opening post, article excerpt and sampled comments are sent to Google's Gemini API using your key, with request logging turned off (`store: false`);
+- the topic title, opening post, article excerpt and sampled comments are sent to Google's Gemini API using your key. Requests are sent with `store: false`, which keeps them out of your AI Studio request logs; Google's API terms govern its handling otherwise;
 - if an article link is dead, its URL is looked up on the Internet Archive's Wayback Machine;
 - articles are opened in an inactive tab that is closed afterwards, and the article's site sees an ordinary visit from your browser;
-- your API key and settings are kept in Chrome sync storage.
+- your API key is kept in local storage on this device, and your other settings in Chrome sync storage;
+- the five most recent results, including the comments they analyzed, are saved in local storage on this device so you can reopen them.
 
 The extension only works on GirlsChannel pages you choose to analyze. See the full [privacy policy](privacy_policy_girlsinsight.md).
 
@@ -294,16 +302,22 @@ There is no build step and no npm dependency. Edit the files, then click the rel
 node --test
 ```
 
-- `article-pipeline.test.js` and `rendered-article-session.test.js` cover article retrieval.
-- `background.test.js` loads the real service worker with Chrome APIs and Gemini replaced by fakes (see `test-support/background-harness.js`). It runs whole analyses and checks the sentiment sample, sample size, settings handling across updates and Gemini error handling.
-- `popup-react.test.js` renders the comment list with the bundled React.
+- `article-pipeline.test.js` and `rendered-article-session.test.js` cover article retrieval and the site permissions requested.
+- `girlschannel-parsing.test.js` covers topic page addresses, Japan-time dates and comment ordering.
+- `background.test.js` loads the real service worker with Chrome APIs and Gemini replaced by fakes (see `test-support/background-harness.js`). It runs whole analyses and checks the sentiment sample and size, streaming, the Gemini request format, retries and error handling, model choice, saved results, settings storage and cancellation when the panel closes.
+- `popup-react.test.js` renders result components with the bundled React.
+- `packaging.test.js` builds the Web Store zip and checks it contains every file the extension loads and no test files.
+
+GitHub Actions runs the suite on every push and pull request (`.github/workflows/test.yml`).
+
+**Packaging.** `sh scripts/package.sh` builds `dist/girlsinsight-<version>.zip` for upload to the Chrome Web Store, containing only the extension's own files. Bump `version` in `manifest.json` first.
 
 **Debugging.**
 
 - **Service worker:** on `chrome://extensions/`, click **service worker** under GirlsinSight to open its console.
 - **Side panel:** right-click inside the panel and choose **Inspect**.
 - **Content script:** open DevTools on a topic page and select the GirlsinSight context in the console's context menu. `testReplyDetection()` and `debugPageStructure()` print what the extension sees in the page.
-- **Article source details:** set `DEBUG_MODE = true` in `background.js` to show how each article was obtained (rendered or archived, full or partial).
+- **Verbose logging:** set `DEBUG_MODE = true` in `background.js` to log each step and show how each article was obtained (rendered or archived, full or partial), and `DEBUG = true` in `content.js` for the content script. Both are off in releases, so a normal run writes nothing to the console log.
 
 **Page structure.** Comment extraction depends on GirlsChannel's HTML: `.comment-item` for each comment, `.body` for text, `.icon-rate-wrap-plus` and `.icon-rate-wrap-minus` for votes, `.pager-topic .next` for pagination and links labeled 件の返信 for replies. If GirlsChannel changes its markup, `content.js` is where to update the selectors.
 
@@ -313,11 +327,14 @@ node --test
 |---|---|
 | "Please configure your Gemini API key" or "API key required" | Add a Gemini API key in Settings and click **Verify**. |
 | "API key is invalid or network error" | Make sure the key is active in Google AI Studio, has quota left and that you are online. |
+| "This API key can't use Gemini 3.6 Flash or newer" | The key's project does not offer a supported model. Create a key in a project that does, in Google AI Studio. |
+| "Gemini's rate limit was reached" | Wait a minute and run the analysis again. Free-tier keys have low per-minute limits. |
+| "The analysis was cut off before it finished" | Gemini used its whole output budget. Run it again, or lower **Comments to analyze**. |
 | The side panel does not open | The panel turns off for a tab that has left GirlsChannel. Open a topic page in that tab, or reload it, and try again. |
 | Analysis fails at once with a connection error | Reload the topic page. This happens when the extension was installed or updated after the page was opened. |
 | "No valid comments found" or "Could not extract comments" | Make sure you are on a topic page (`/topics/<id>/`), not a search or list page, then refresh and try again. |
-| Summary ignores the linked article | Site access may have been declined, or the article may be blocked, paywalled or unreadable. Gemini then interprets the opening post instead. |
-| The sentiment section is slow | It asks Gemini for its deepest thinking and a long essay. Large topics, or runs with replies included, take longer. |
+| Summary ignores the linked article | Site access may have been declined (reopen the panel to be asked again), the link may redirect to a different site than the one you allowed, or the article may be blocked, paywalled or unreadable. Gemini then interprets the opening post instead. |
+| The sentiment section is slow | It asks Gemini for its deepest thinking and a long essay. The essay text appears as it is written. Large topics, or runs with replies included, take longer. |
 | Excel download fails | Check that Chrome allows downloads and that there is disk space. |
 
 ## License
