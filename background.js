@@ -24,6 +24,16 @@ const GEMINI_MODEL = 'gemini-3.8-flash';
 // If a key cannot use GEMINI_MODEL, the newest stable "gemini-X.Y-flash" it can
 // use is chosen instead, as long as it accepts thinkingLevel (3.6 and newer).
 const MIN_FALLBACK_FLASH_VERSION = 306; // major * 100 + minor
+// The summary goes to Flash-Lite: on the free tier it allows 500 requests a
+// day and 15 a minute, against 20 a day and 5 a minute for each Flash model,
+// and it is Google's fastest 3.5 model. The essay stays on Flash.
+const SUMMARY_MODEL = 'gemini-3.5-flash-lite';
+const MIN_FLASH_LITE_VERSION = 305;
+// How long a model is skipped after turning a request away: busy (free-tier
+// traffic is shed first) for 10 minutes; a setting it rejects for a day. A
+// used-up daily limit lasts until Google's daily reset (midnight Pacific).
+const BUSY_COOLDOWN_MS = 10 * 60_000;
+const UNSUITABLE_COOLDOWN_MS = 24 * 3_600_000;
 // Explicitly off for the current adjustable categories, so a change to
 // Google's defaults cannot start refusing ordinary forum threads.
 const SAFETY_SETTINGS = [
@@ -57,6 +67,7 @@ const ERROR_KINDS = {
     PREPAID_CREDITS_DEPLETED: 'creditsDepleted',
     BUSY: 'busy',
     RATE_LIMITED: 'rateLimited',
+    DAILY_LIMIT: 'rateLimited',
 };
 
 const i18n = {
@@ -111,6 +122,17 @@ const i18n = {
         return message;
     }
 };
+
+// The next midnight in Pacific time, when Google resets daily quotas. (On the
+// two daylight-saving change days this can be an hour off.)
+function nextPacificMidnight(now = Date.now()) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Los_Angeles', hourCycle: 'h23',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(now).map(part => [part.type, part.value]));
+    const intoDay = ((Number(parts.hour) * 60 + Number(parts.minute)) * 60 + Number(parts.second)) * 1000 + now % 1000;
+    return now - intoDay + 24 * 3_600_000;
+}
 
 // "gemini-3.6-flash" -> "Gemini 3.6 Flash", for messages people read.
 function modelDisplayName(model) {
@@ -578,6 +600,7 @@ class GirlsinSightBackground {
         }
         this.geminiModel = validationResult.model;
         this.geminiModels = validationResult.models;
+        this.summaryModels = validationResult.summaryModels;
         
         // Setup promises to wait for data from content script
         let initialDataResolver, allCommentsResolver;
@@ -789,11 +812,15 @@ class GirlsinSightBackground {
                 pageToken = data.nextPageToken;
             }
 
-            const usableModels = this.usableGeminiModels(models);
-            if (!usableModels.length) {
+            // The essay tries Flash first, then Flash-Lite; the summary the other
+            // way round. A busy or used-up model moves a request along its list.
+            const flash = this.usableGeminiModels(models);
+            const lite = this.usableFlashLiteModels(models);
+            const essayModels = [...flash, ...lite];
+            if (!essayModels.length) {
                 return { success: false, modelUnavailable: true, errorKind: 'noModel', error: i18n.getMessage('modelUnavailable') };
             }
-            return { success: true, model: usableModels[0], models: usableModels };
+            return { success: true, model: essayModels[0], models: essayModels, summaryModels: [...lite, ...flash] };
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('API key validation failed:', error);
@@ -822,6 +849,22 @@ class GirlsinSightBackground {
             .sort((a, b) => b.version - a.version)
             .map(({ name }) => name);
         return [...new Set([...(usable.includes(GEMINI_MODEL) ? [GEMINI_MODEL] : []), ...flash])];
+    }
+
+    // Flash-Lite models this key can use: SUMMARY_MODEL first, then the newest
+    // "gemini-X.Y-flash-lite" from 3.5 on.
+    usableFlashLiteModels(models) {
+        const usable = models
+            .filter(model => (model.supportedGenerationMethods || []).includes('generateContent'))
+            .map(model => String(model.name || '').replace(/^models\//, ''));
+        const lite = usable
+            .map(name => ({ name, match: name.match(/^gemini-(\d+)\.(\d+)-flash-lite$/) }))
+            .filter(({ match }) => match)
+            .map(({ name, match }) => ({ name, version: Number(match[1]) * 100 + Number(match[2]) }))
+            .filter(({ version }) => version >= MIN_FLASH_LITE_VERSION)
+            .sort((a, b) => b.version - a.version)
+            .map(({ name }) => name);
+        return [...new Set([...(usable.includes(SUMMARY_MODEL) ? [SUMMARY_MODEL] : []), ...lite])];
     }
 
     // Keep the service worker alive during long operations
@@ -1110,6 +1153,7 @@ ${topComment.slice(0, 1000)}`;
             const drafts = this.createDraftSender(analysisId, 'summaryDraft');
             try {
                 return await this.callGeminiAPI(prompt, {
+                    models: this.summaryModels || this.geminiModels,
                     maxOutputTokens: 8192,
                     thinkingLevel: 'LOW',
                     onText: drafts.update,
@@ -1494,7 +1538,7 @@ Score: <0-10>`;
     // which new paid-tier projects enable by default since October 26, 2026.
     // With onText, the reply is streamed and onText receives the text so far.
     async callGeminiAPI(prompt, {
-        model = this.geminiModel || GEMINI_MODEL,
+        models = this.geminiModels || [this.geminiModel || GEMINI_MODEL],
         maxOutputTokens = 8192,
         thinkingLevel = 'LOW',
         onText = null,
@@ -1509,6 +1553,11 @@ Score: <0-10>`;
             store: false,
         });
         const method = onText ? 'streamGenerateContent?alt=sse' : 'generateContent';
+        // Models that recently turned a request away are skipped, unless every
+        // model on the list did.
+        const order = await this.modelsToTry(models);
+        let modelIndex = 0;
+        let model = order[0];
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -1537,7 +1586,9 @@ Score: <0-10>`;
                         });
                     } catch (networkError) {
                         if (timedOut && !(signal && signal.aborted)) {
-                            throw this.geminiError(i18n.getMessage('geminiBusy'), { retryable: true, code: 'BUSY' });
+                            throw this.geminiError(i18n.getMessage('geminiBusy'), {
+                                retryable: true, code: 'BUSY', moveOn: true, cooldownUntil: Date.now() + BUSY_COOLDOWN_MS,
+                            });
                         }
                         if (networkError.name === 'AbortError') throw networkError;
                         throw this.geminiError(`Network error: ${networkError.message}`, { retryable: true });
@@ -1556,25 +1607,69 @@ Score: <0-10>`;
             } catch (error) {
                 if (error.name === 'AbortError' || (signal && signal.aborted)) throw this.abortError();
                 console.error(`Gemini API attempt ${attempt} failed:`, error);
-                // Only failures a retry can fix are retried: network errors,
-                // server errors, a busy Gemini and rate limits (after the wait
-                // Gemini asks for).
-                if (error.retryable === false || attempt === maxAttempts) throw error;
+                // A model that is busy, out of today's free requests or unable to
+                // take this request is remembered and skipped for a while, and
+                // the request moves straight on to the next model on its list.
+                if (error.moveOn) await this.coolDownModel(model, error.cooldownUntil);
+                if (attempt === maxAttempts) throw error;
+                const next = error.moveOn ? order[modelIndex + 1] : undefined;
+                if (next) {
+                    const switchMessage = {
+                        BUSY: 'geminiBusyRetryingWithModel',
+                        DAILY_LIMIT: 'geminiDailyLimitRetryingWithModel',
+                    }[error.code];
+                    if (switchMessage) {
+                        this.sendProgress(i18n.getMessage(switchMessage,
+                            [modelDisplayName(model), modelDisplayName(next), attempt + 1, maxAttempts]), this.activeAnalysisId);
+                    }
+                    modelIndex += 1;
+                    model = next;
+                    continue;
+                }
+                // Otherwise only failures a retry can fix are retried: network
+                // errors, server errors, a busy Gemini and rate limits (after
+                // the wait Gemini asks for).
+                if (error.retryable === false) throw error;
                 if (error.code === 'BUSY') {
-                    // Free-tier traffic is shed first, and the newest model is the
-                    // busiest. Move to the next model for this and later requests,
-                    // and say so, with the try that comes next.
-                    const busyModel = modelDisplayName(model);
-                    const models = this.geminiModels || [];
-                    const next = models[models.indexOf(model) + 1];
-                    if (next) model = this.geminiModel = next;
-                    this.sendProgress(next
-                        ? i18n.getMessage('geminiBusyRetryingWithModel', [busyModel, modelDisplayName(next), attempt + 1, maxAttempts])
-                        : i18n.getMessage('geminiBusyRetrying', [busyModel, attempt + 1, maxAttempts]),
-                    this.activeAnalysisId);
+                    this.sendProgress(i18n.getMessage('geminiBusyRetrying',
+                        [modelDisplayName(model), attempt + 1, maxAttempts]), this.activeAnalysisId);
                 }
                 await this.delayWithSignal(error.retryAfterMs ?? 1000 * attempt, signal);
             }
+        }
+    }
+
+    // Cooldowns live in local storage so they survive the service worker
+    // being stopped between runs: { model: time until which it is skipped }.
+    async loadModelCooldowns() {
+        if (this.modelCooldowns) return this.modelCooldowns;
+        try {
+            const { modelCooldowns } = await chrome.storage.local.get('modelCooldowns');
+            this.modelCooldowns = { ...(modelCooldowns || {}) };
+        } catch (_) {
+            this.modelCooldowns = {};
+        }
+        return this.modelCooldowns;
+    }
+
+    async modelsToTry(models) {
+        const cooldowns = await this.loadModelCooldowns();
+        const now = Date.now();
+        const available = models.filter(model => !(cooldowns[model] > now));
+        return available.length ? available : models;
+    }
+
+    async coolDownModel(model, until) {
+        const cooldowns = await this.loadModelCooldowns();
+        const now = Date.now();
+        for (const name of Object.keys(cooldowns)) {
+            if (!(cooldowns[name] > now)) delete cooldowns[name];
+        }
+        cooldowns[model] = Math.max(cooldowns[model] || 0, until || now + BUSY_COOLDOWN_MS);
+        try {
+            await chrome.storage.local.set({ modelCooldowns: cooldowns });
+        } catch (error) {
+            console.warn('Could not save model cooldowns:', error);
         }
     }
 
@@ -1582,9 +1677,13 @@ Score: <0-10>`;
         return (error && ERROR_KINDS[error.code]) || null;
     }
 
-    geminiError(message, { retryable = false, code = null, retryAfterMs = null } = {}) {
+    geminiError(message, {
+        retryable = false, code = null, retryAfterMs = null, moveOn = false, cooldownUntil = null,
+    } = {}) {
         const error = new Error(message);
         error.retryable = retryable;
+        if (moveOn) error.moveOn = true;
+        if (cooldownUntil !== null) error.cooldownUntil = cooldownUntil;
         if (code) error.code = code;
         if (retryAfterMs !== null) error.retryAfterMs = retryAfterMs;
         return error;
@@ -1607,7 +1706,16 @@ Score: <0-10>`;
         if (isKeyError) return this.geminiError(i18n.getMessage('apiKeyInvalid'), { code: 'API_KEY' });
 
         if (response.status === 503) {
-            return this.geminiError(i18n.getMessage('geminiBusy'), { retryable: true, code: 'BUSY' });
+            return this.geminiError(i18n.getMessage('geminiBusy'), {
+                retryable: true, code: 'BUSY', moveOn: true, cooldownUntil: Date.now() + BUSY_COOLDOWN_MS,
+            });
+        }
+
+        // A model that does not take this thinking setting is passed over.
+        if (response.status === 400 && /thinking/i.test(String(apiError && apiError.message))) {
+            return this.geminiError(`API request failed (400): ${apiError.message}`, {
+                code: 'MODEL_UNSUITABLE', moveOn: true, cooldownUntil: Date.now() + UNSUITABLE_COOLDOWN_MS,
+            });
         }
 
         if (response.status === 402) {
@@ -1615,13 +1723,26 @@ Score: <0-10>`;
         }
 
         if (response.status === 429) {
+            // A used-up daily quota lasts until Google's daily reset, whatever
+            // wait its RetryInfo suggests; the request moves to another model.
+            const dailyQuota = details.some(detail => String(detail['@type'] || '').endsWith('QuotaFailure') &&
+                (detail.violations || []).some(violation => /PerDay/i.test(String(violation.quotaId || ''))));
+            if (dailyQuota) {
+                return this.geminiError(i18n.getMessage('rateLimited'), {
+                    code: 'DAILY_LIMIT', moveOn: true, cooldownUntil: nextPacificMidnight(),
+                });
+            }
             const retryInfo = details.find(detail => String(detail['@type'] || '').endsWith('RetryInfo'));
             const seconds = retryInfo ? parseFloat(retryInfo.retryDelay) : NaN;
             const waitMs = Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : 5000;
+            // A short wait is waited out on the same model; a long one moves on.
+            const longWait = waitMs > MAX_RETRY_WAIT_MS;
             return this.geminiError(i18n.getMessage('rateLimited'), {
                 code: 'RATE_LIMITED',
-                retryable: waitMs <= MAX_RETRY_WAIT_MS,
+                retryable: !longWait,
                 retryAfterMs: waitMs,
+                moveOn: longWait,
+                cooldownUntil: longWait ? Date.now() + waitMs : null,
             });
         }
 

@@ -315,6 +315,9 @@
     "geminiBusyRetrying": {
         "message": "$1 is busy. Trying again (try $2 of $3)…"
     },
+    "geminiDailyLimitRetryingWithModel": {
+        "message": "$1 has reached today's free limit. Trying again with $2 (try $3 of $4)…"
+    },
     "geminiBusyRetryingWithModel": {
         "message": "$1 is busy. Trying again with $2 (try $3 of $4)…"
     },

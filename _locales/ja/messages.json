@@ -319,6 +319,9 @@
     "geminiBusyRetrying": {
         "message": "$1が混み合っています。再試行しています（$3回中$2回目）…"
     },
+    "geminiDailyLimitRetryingWithModel": {
+        "message": "$1は本日の無料枠の上限に達しました。$2で再試行しています（$4回中$3回目）…"
+    },
     "geminiBusyRetryingWithModel": {
         "message": "$1が混み合っています。$2で再試行しています（$4回中$3回目）…"
     },
