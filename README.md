@@ -325,6 +325,8 @@ GitHub Actions runs the suite on every push and pull request (`.github/workflows
 
 ## Troubleshooting
 
+When an analysis fails, the side panel shows a card in place of the status line. It says what went wrong, why, and the steps to fix it, with buttons that go there: the AI Studio API Keys page, Settings, the API key guide, **Try again** or **Reload page**. If only the sentiment part fails, the summary and statistics stay on screen and the card appears above them. The table below lists the underlying messages.
+
 | Problem | What to check |
 |---|---|
 | "Please configure your Gemini API key" or "API key required" | Add a Gemini API key in Settings and click **Verify**. |

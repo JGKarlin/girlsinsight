@@ -96,6 +96,59 @@ body {
     }
 }
 
+/* Shown instead of the status line when an analysis fails: what went wrong,
+   why, the steps to fix it and buttons that go there. */
+.error-card {
+    margin: 12px 16px 0;
+    padding: 14px 16px;
+    background: #fff5f6;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+    border-left: 4px solid var(--error-color);
+    border-radius: 8px;
+    color: var(--text-color);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.error-card.hidden {
+    display: none;
+}
+
+.error-card-title {
+    margin: 0 0 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--error-color);
+}
+
+.error-card-title::before {
+    content: '⚠ ';
+}
+
+.error-card-why {
+    margin: 0 0 10px;
+}
+
+.error-card-intro {
+    margin: 0 0 4px;
+    font-weight: 600;
+}
+
+.error-card-steps {
+    margin: 0 0 12px;
+    padding-left: 20px;
+}
+
+.error-card-steps li {
+    margin: 2px 0;
+}
+
+.error-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .status-text {
     font-size: 14px;
     color: #2c3e50;

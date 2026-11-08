@@ -332,9 +332,9 @@ test('depleted prepaid credits (402) fail at once with a message that points to 
     assert.equal(harness.geminiRequests.length, 1);
 });
 
-for (const [name, reply, messageKey] of [
-    ['depleted prepaid credits', creditsDepleted, 'prepaidCreditsDepleted'],
-    ['a rejected API key', invalidKey, 'apiKeyInvalid'],
+for (const [name, reply, messageKey, errorKind] of [
+    ['depleted prepaid credits', creditsDepleted, 'prepaidCreditsDepleted', 'creditsDepleted'],
+    ['a rejected API key', invalidKey, 'apiKeyInvalid', 'keyRejected'],
 ]) {
     test(`${name} at the summary request ends the run before the sentiment request`, async () => {
         const harness = await loadBackground({ sync: { language: 'en' }, gemini: reply });
@@ -345,6 +345,7 @@ for (const [name, reply, messageKey] of [
         assert.equal(sentiment, undefined);
         const failure = harness.runtimeMessages.find(message => message.action === 'analysisFailed');
         assert.equal(failure && failure.error, en[messageKey].message);
+        assert.equal(failure.errorKind, errorKind, 'the panel is told which error card to show');
         assert.ok(harness.tabMessages.some(message => message.action === 'abortExtraction'),
             'the content script was told to stop reading pages');
     });
@@ -356,6 +357,7 @@ test('credits that run out at the sentiment request are named in the sentiment r
 
     assert.equal(sentiment.score, null);
     assert.equal(sentiment.details, en.prepaidCreditsDepleted.message);
+    assert.equal(sentiment.errorKind, 'creditsDepleted');
 });
 
 // What Gemini answers when it sheds free-tier traffic under heavy demand.
@@ -419,6 +421,7 @@ test('a busy spell that does not clear is reported as Gemini being busy', async 
 
     assert.equal(sentiment.score, null);
     assert.equal(sentiment.details, en.geminiBusy.message);
+    assert.equal(sentiment.errorKind, 'busy');
 });
 
 for (const [name, reply] of [
@@ -499,6 +502,7 @@ test('a key with no usable model stops before extraction with a clear message', 
     assert.equal(harness.geminiRequests.length, 0);
     const failure = harness.runtimeMessages.find(message => message.action === 'analysisFailed');
     assert.equal(failure.error, en.modelUnavailable.message);
+    assert.equal(failure.errorKind, 'noModel');
 });
 
 test('the Verify button reports a key that has no usable model', async () => {
@@ -511,6 +515,48 @@ test('the Verify button reports a key that has no usable model', async () => {
     ));
     assert.equal(response.success, false);
     assert.equal(response.error, en.modelUnavailable.message);
+});
+
+// ---------------------------------------------------------------- error cards
+
+const failureOf = harness => harness.runtimeMessages.find(message => message.action === 'analysisFailed');
+
+test('a run without an API key tells the panel to show the "no key" card', async () => {
+    const harness = await loadBackground({ sync: { language: 'en' } });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: { ...manual10, geminiApiKey: '' } });
+    assert.equal(failureOf(harness).errorKind, 'noKey');
+});
+
+for (const [name, reply, errorKind, messageKey] of [
+    ['rejects the key', invalidKey, 'keyRejected', 'apiKeyInvalid'],
+    ['finds the prepaid credits used up', creditsDepleted, 'creditsDepleted', 'prepaidCreditsDepleted'],
+]) {
+    test(`a key check that ${name} stops before extraction with the matching card`, async () => {
+        const harness = await loadBackground({ sync: { language: 'en' }, modelsReply: reply });
+        const { result } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+        assert.equal(result.success, false);
+        assert.equal(failureOf(harness).errorKind, errorKind);
+        assert.equal(failureOf(harness).error, en[messageKey].message);
+    });
+}
+
+test('a topic page that cannot be read gives the "reload the page" card', async () => {
+    const harness = await loadBackground({ sync: { language: 'en' } });
+    harness.background.awaitWithSignal = () => Promise.reject(new Error('Failed to extract initial topic data.'));
+    await harness.background.startFullAnalysis({
+        tabId: 7, analysisId: 'unreadable', articleAccessGranted: false,
+        settings: { geminiApiKey: 'k', language: 'en', commentsToDisplay: 5, ...manual10 },
+    });
+    assert.equal(failureOf(harness).errorKind, 'pageUnreadable');
+});
+
+test('a rate limit that does not clear marks the sentiment result as rate limited', async () => {
+    const limited = () => jsonResponse(429, errorBody(429, 'RESOURCE_EXHAUSTED', 'Quota exceeded',
+        [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '120s' }]));
+    const harness = await loadBackground({ sync: { language: 'en' }, gemini: scriptedGemini(limited) });
+    const { sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+    assert.equal(sentiment.errorKind, 'rateLimited');
 });
 
 // ---------------------------------------------------------------- panel lifetime

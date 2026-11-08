@@ -330,5 +330,98 @@
     },
     "closeButtonLabel": {
         "message": "閉じる"
+    },
+    "errorIntro": {
+        "message": "対処方法："
+    },
+    "errorIntroFree": {
+        "message": "GirlsinSightを無料で使うには："
+    },
+    "errorAction_openApiKeysPage": {
+        "message": "APIキーのページを開く"
+    },
+    "errorAction_openSettings": {
+        "message": "設定を開く"
+    },
+    "errorAction_howToGetKey": {
+        "message": "キーの入手方法"
+    },
+    "errorAction_tryAgain": {
+        "message": "もう一度試す"
+    },
+    "errorAction_reloadPage": {
+        "message": "ページを再読み込み"
+    },
+    "errorTitle_noKey": {
+        "message": "Gemini APIキーを追加してください"
+    },
+    "errorWhy_noKey": {
+        "message": "トピックを分析するにはGemini APIキーが必要です。キーは無料で入手できます。"
+    },
+    "errorSteps_noKey": {
+        "message": "AI StudioのAPIキーのページを開き、Googleアカウントでログインします。\nAI Studioが作成したキーをコピーするか、「Create API key」をクリックします。\n設定に貼り付けて「検証」をクリックします。"
+    },
+    "errorTitle_keyRejected": {
+        "message": "GoogleがこのAPIキーを拒否しました"
+    },
+    "errorWhy_keyRejected": {
+        "message": "キーの入力ミスや削除が考えられます。Gemini APIに制限されていない古いキーも使えなくなりました。"
+    },
+    "errorSteps_keyRejected": {
+        "message": "AI StudioのAPIキーのページを開きます。\n新しいキーを作成します。\n設定に貼り付けて「検証」をクリックします。"
+    },
+    "errorTitle_creditsDepleted": {
+        "message": "このキーのプロジェクトはクレジットが残っていません"
+    },
+    "errorWhy_creditsDepleted": {
+        "message": "このキーは、プリペイド課金で残高が0円のGoogleプロジェクトのものです。Googleはこのプロジェクトを停止し、無料枠には切り替えません。"
+    },
+    "errorSteps_creditsDepleted": {
+        "message": "AI StudioのAPIキーのページを開きます。\n課金を設定していないプロジェクトでキーを作成します。\n設定に貼り付けて「検証」をクリックします。"
+    },
+    "errorTitle_busy": {
+        "message": "Geminiが混み合っています"
+    },
+    "errorWhy_busy": {
+        "message": "混雑時は、Googleは無料枠のリクエストから先に断ります。GirlsinSightは別のモデルも使って再試行しました。"
+    },
+    "errorSteps_busy": {
+        "message": "数分待ちます。\n「もう一度試す」をクリックします。"
+    },
+    "errorTitle_rateLimited": {
+        "message": "Geminiの無料枠の上限に達しました"
+    },
+    "errorWhy_rateLimited": {
+        "message": "無料枠では、1分あたりと1日あたりのリクエスト数に上限があります。"
+    },
+    "errorSteps_rateLimited": {
+        "message": "1分ほど待ってから「もう一度試す」をクリックします。\nそれでも続く場合は1日の上限に達しています。明日もう一度お試しください。"
+    },
+    "errorTitle_noModel": {
+        "message": "このキーではGirlsinSightに必要なモデルを使えません"
+    },
+    "errorWhy_noModel": {
+        "message": "GirlsinSightにはGemini 3.6 Flash以降が必要ですが、このキーのプロジェクトでは利用できません。"
+    },
+    "errorSteps_noModel": {
+        "message": "AI StudioのAPIキーのページを開きます。\n新しいプロジェクトでキーを作成します。\n設定に貼り付けて「検証」をクリックします。"
+    },
+    "errorTitle_pageUnreadable": {
+        "message": "このトピックを読み込めませんでした"
+    },
+    "errorWhy_pageUnreadable": {
+        "message": "ページが読み込み後に変わったか、ページを開いた後にGirlsinSightが更新された可能性があります。"
+    },
+    "errorSteps_pageUnreadable": {
+        "message": "「ページを再読み込み」をクリックします。\nもう一度分析します。"
+    },
+    "errorTitle_other": {
+        "message": "分析を完了できませんでした"
+    },
+    "errorWhy_other": {
+        "message": "トピックの分析中に問題が発生しました。"
+    },
+    "errorSteps_other": {
+        "message": "「もう一度試す」をクリックします。\n失敗が続く場合は、トピックのページを再読み込みしてからお試しください。"
     }
 }

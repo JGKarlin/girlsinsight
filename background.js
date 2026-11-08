@@ -49,6 +49,15 @@ const MAX_SAVED_ANALYSES = 5;
 // or a Prepay project whose credits are used up (Google blocks such a project
 // outright instead of falling back to the free tier).
 const RUN_ENDING_ERROR_CODES = ['API_KEY', 'PREPAID_CREDITS_DEPLETED'];
+// Which error card the side panel shows for each Gemini error code. Failures
+// without a code get 'other', or 'pageUnreadable' when the topic page could
+// not be read.
+const ERROR_KINDS = {
+    API_KEY: 'keyRejected',
+    PREPAID_CREDITS_DEPLETED: 'creditsDepleted',
+    BUSY: 'busy',
+    RATE_LIMITED: 'rateLimited',
+};
 
 const i18n = {
     messages: {},
@@ -549,23 +558,18 @@ class GirlsinSightBackground {
         
         // Validate API key before starting any analysis
         if (!settings.geminiApiKey) {
-            chrome.runtime.sendMessage({ 
-                action: 'analysisFailed', 
-                analysisId,
-                error: i18n.getMessage('apiKeyMissing') 
-            });
-            return { success: false, error: i18n.getMessage('apiKeyMissing') };
+            const error = i18n.getMessage('apiKeyMissing');
+            chrome.runtime.sendMessage({ action: 'analysisFailed', analysisId, error, errorKind: 'noKey' });
+            return { success: false, analysisId, error, errorKind: 'noKey' };
         }
         
         // Check if API key is valid before proceeding
         this.sendProgress(i18n.getMessage('progressValidatingApiKey') || 'Validating API key...', analysisId);
         const validationResult = await this.validateApiKey(settings.geminiApiKey, { signal });
         if (!validationResult.success) {
-            const error = validationResult.modelUnavailable
-                ? validationResult.error
-                : i18n.getMessage('apiKeyInvalid');
-            chrome.runtime.sendMessage({ action: 'analysisFailed', analysisId, error });
-            return { success: false, error };
+            const { error, errorKind } = validationResult;
+            chrome.runtime.sendMessage({ action: 'analysisFailed', analysisId, error, errorKind });
+            return { success: false, analysisId, error, errorKind };
         }
         this.geminiModel = validationResult.model;
         this.geminiModels = validationResult.models;
@@ -713,10 +717,12 @@ class GirlsinSightBackground {
                 return { success: false, cancelled: true, analysisId };
             }
             console.error('Full analysis failed:', error);
-            chrome.runtime.sendMessage({ action: 'analysisFailed', analysisId, error: error.message });
+            const errorKind = this.errorKindOf(error) ||
+                (/extract|establish connection|receiving end/i.test(error.message) ? 'pageUnreadable' : 'other');
+            chrome.runtime.sendMessage({ action: 'analysisFailed', analysisId, error: error.message, errorKind });
             // The content script may still be reading later pages; stop it.
             await this.abortAnalysis({ analysisId, tabId });
-            return { success: false, analysisId, error: error.message };
+            return { success: false, analysisId, error: error.message, errorKind };
         } finally {
             this.analysisPromises.delete(analysisId);
             if (this.analysisControllers.get(analysisId) === controller) {
@@ -757,7 +763,7 @@ class GirlsinSightBackground {
     // goes in a header so it never appears in a URL.
     async validateApiKey(apiKey, { signal } = {}) {
         if (!apiKey) {
-            return { success: false, error: 'API key is missing' };
+            return { success: false, error: i18n.getMessage('apiKeyMissing'), errorKind: 'noKey' };
         }
         try {
             const models = [];
@@ -769,8 +775,15 @@ class GirlsinSightBackground {
                     headers: { 'x-goog-api-key': apiKey },
                 });
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    return { success: false, error: errorData?.error?.message || 'Invalid API key or network issue' };
+                    // A key Google turns away is reported as rejected unless the
+                    // reply says why (used-up credits, a busy Gemini, a rate limit).
+                    const error = await this.geminiHttpError(response);
+                    const errorKind = this.errorKindOf(error) || 'keyRejected';
+                    return {
+                        success: false,
+                        errorKind,
+                        error: errorKind === 'keyRejected' ? i18n.getMessage('apiKeyInvalid') : error.message,
+                    };
                 }
                 const data = await response.json();
                 models.push(...(data.models || []));
@@ -780,13 +793,13 @@ class GirlsinSightBackground {
 
             const usableModels = this.usableGeminiModels(models);
             if (!usableModels.length) {
-                return { success: false, modelUnavailable: true, error: i18n.getMessage('modelUnavailable') };
+                return { success: false, modelUnavailable: true, errorKind: 'noModel', error: i18n.getMessage('modelUnavailable') };
             }
             return { success: true, model: usableModels[0], models: usableModels };
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('API key validation failed:', error);
-            return { success: false, error: 'Failed to connect to the API. Check your network connection.' };
+            return { success: false, errorKind: 'other', error: i18n.getMessage('apiKeyInvalid') };
         }
     }
 
@@ -1201,7 +1214,7 @@ Score: <0-10>`;
                     ? error.message
                     : `Sentiment analysis failed: ${error.message}`;
             // No score rather than a made-up neutral one.
-            return { label: null, score: null, details };
+            return { label: null, score: null, details, errorKind: this.errorKindOf(error) || 'other' };
         }
     }
 
@@ -1549,6 +1562,10 @@ Score: <0-10>`;
         }
     }
 
+    errorKindOf(error) {
+        return (error && ERROR_KINDS[error.code]) || null;
+    }
+
     geminiError(message, { retryable = false, code = null, retryAfterMs = null } = {}) {
         const error = new Error(message);
         error.retryable = retryable;
@@ -1586,6 +1603,7 @@ Score: <0-10>`;
             const seconds = retryInfo ? parseFloat(retryInfo.retryDelay) : NaN;
             const waitMs = Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : 5000;
             return this.geminiError(i18n.getMessage('rateLimited'), {
+                code: 'RATE_LIMITED',
                 retryable: waitMs <= MAX_RETRY_WAIT_MS,
                 retryAfterMs: waitMs,
             });

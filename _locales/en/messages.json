@@ -326,5 +326,98 @@
     },
     "closeButtonLabel": {
         "message": "Close"
+    },
+    "errorIntro": {
+        "message": "What to do:"
+    },
+    "errorIntroFree": {
+        "message": "To use GirlsinSight for free:"
+    },
+    "errorAction_openApiKeysPage": {
+        "message": "Open API Keys page"
+    },
+    "errorAction_openSettings": {
+        "message": "Open Settings"
+    },
+    "errorAction_howToGetKey": {
+        "message": "How to get a key"
+    },
+    "errorAction_tryAgain": {
+        "message": "Try again"
+    },
+    "errorAction_reloadPage": {
+        "message": "Reload page"
+    },
+    "errorTitle_noKey": {
+        "message": "Add your Gemini API key"
+    },
+    "errorWhy_noKey": {
+        "message": "GirlsinSight needs a Gemini API key to analyze topics. Getting one is free."
+    },
+    "errorSteps_noKey": {
+        "message": "Open the AI Studio API Keys page and sign in with your Google account.\nCopy the key AI Studio made for you, or click Create API key.\nPaste it in Settings and click Verify."
+    },
+    "errorTitle_keyRejected": {
+        "message": "Google rejected this API key"
+    },
+    "errorWhy_keyRejected": {
+        "message": "The key may be mistyped or deleted. Older keys that aren't restricted to the Gemini API are also no longer accepted."
+    },
+    "errorSteps_keyRejected": {
+        "message": "Open the AI Studio API Keys page.\nCreate a new key.\nPaste it in Settings and click Verify."
+    },
+    "errorTitle_creditsDepleted": {
+        "message": "This key's project has run out of credits"
+    },
+    "errorWhy_creditsDepleted": {
+        "message": "The key belongs to a Google project with prepaid billing and a $0 balance. Google blocks that project. It does not fall back to the free tier."
+    },
+    "errorSteps_creditsDepleted": {
+        "message": "Open the AI Studio API Keys page.\nCreate a key in a project without billing.\nPaste it in Settings and click Verify."
+    },
+    "errorTitle_busy": {
+        "message": "Gemini is too busy right now"
+    },
+    "errorWhy_busy": {
+        "message": "When demand is high, Google turns away free-tier requests first. GirlsinSight already tried again, including with another model."
+    },
+    "errorSteps_busy": {
+        "message": "Wait a few minutes.\nClick Try again."
+    },
+    "errorTitle_rateLimited": {
+        "message": "Gemini's free limit was reached"
+    },
+    "errorWhy_rateLimited": {
+        "message": "The free tier allows a limited number of requests per minute and per day."
+    },
+    "errorSteps_rateLimited": {
+        "message": "Wait a minute, then click Try again.\nIf it happens again, the daily limit is used up. Try again tomorrow."
+    },
+    "errorTitle_noModel": {
+        "message": "This key can't use the models GirlsinSight needs"
+    },
+    "errorWhy_noModel": {
+        "message": "GirlsinSight needs Gemini 3.6 Flash or newer, and this key's project doesn't offer it."
+    },
+    "errorSteps_noModel": {
+        "message": "Open the AI Studio API Keys page.\nCreate a key in a new project.\nPaste it in Settings and click Verify."
+    },
+    "errorTitle_pageUnreadable": {
+        "message": "Couldn't read this topic"
+    },
+    "errorWhy_pageUnreadable": {
+        "message": "The page may have changed since it loaded, or GirlsinSight was updated after the page was opened."
+    },
+    "errorSteps_pageUnreadable": {
+        "message": "Click Reload page.\nRun the analysis again."
+    },
+    "errorTitle_other": {
+        "message": "The analysis didn't finish"
+    },
+    "errorWhy_other": {
+        "message": "Something went wrong while analyzing this topic."
+    },
+    "errorSteps_other": {
+        "message": "Click Try again.\nIf it keeps failing, reload the topic page and try again."
     }
 }

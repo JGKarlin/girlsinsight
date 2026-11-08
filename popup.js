@@ -52,6 +52,35 @@ function analysisErrorMessage(error, analysisResponse, getMessage) {
     return getMessage('analysisFailed');
 }
 
+// The error card's buttons for each kind of failure, in order. The service
+// worker sends the kind with every failure (see ERROR_KINDS in background.js).
+const ERROR_CARD_ACTIONS = {
+    noKey: ['howToGetKey', 'openSettings'],
+    keyRejected: ['openApiKeysPage', 'openSettings'],
+    creditsDepleted: ['openApiKeysPage', 'openSettings'],
+    busy: ['tryAgain'],
+    rateLimited: ['tryAgain'],
+    noModel: ['openApiKeysPage', 'openSettings'],
+    pageUnreadable: ['reloadPage'],
+    other: ['tryAgain'],
+};
+const AI_STUDIO_API_KEYS_URL = 'https://aistudio.google.com/apikey';
+
+// What the error card says: what went wrong, why, the steps to fix it and its
+// buttons. A kind the panel does not know is shown as 'other', which explains
+// itself with the service worker's own message.
+function errorCardContent(kind, message, getMessage) {
+    const known = Object.prototype.hasOwnProperty.call(ERROR_CARD_ACTIONS, kind) ? kind : 'other';
+    return {
+        kind: known,
+        title: getMessage(`errorTitle_${known}`),
+        why: known === 'other' && message ? message : getMessage(`errorWhy_${known}`),
+        intro: getMessage(known === 'creditsDepleted' ? 'errorIntroFree' : 'errorIntro'),
+        steps: getMessage(`errorSteps_${known}`).split('\n').filter(Boolean),
+        actions: ERROR_CARD_ACTIONS[known].map(action => ({ action, label: getMessage(`errorAction_${action}`) })),
+    };
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
     try {
         // Initialize our custom localization first
@@ -154,6 +183,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Initialize popup
         async function init() {
+            hideErrorCard();
             try {
                 const settings = await getSettings();
                 
@@ -237,6 +267,59 @@ document.addEventListener('DOMContentLoaded', async function() {
             return url && url.includes('girlschannel.net/topics/') && !url.includes('/search/');
         }
         
+        // The error card replaces the status line while it is shown.
+        const errorCard = document.getElementById('error-card');
+
+        function showErrorCard(kind, message) {
+            const card = errorCardContent(kind, message, l);
+            updateStatus('error', card.title);
+            if (!errorCard) return;
+            errorCard.querySelector('.error-card-title').textContent = card.title;
+            errorCard.querySelector('.error-card-why').textContent = card.why;
+            errorCard.querySelector('.error-card-intro').textContent = card.intro;
+            errorCard.querySelector('.error-card-steps').replaceChildren(...card.steps.map(text => {
+                const item = document.createElement('li');
+                item.textContent = text;
+                return item;
+            }));
+            errorCard.querySelector('.error-card-actions').replaceChildren(...card.actions.map(({ action, label }) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'setup-btn';
+                button.textContent = label;
+                button.addEventListener('click', () => runErrorCardAction(action));
+                return button;
+            }));
+            if (statusBar) statusBar.style.display = 'none';
+            errorCard.classList.remove('hidden');
+        }
+
+        function hideErrorCard() {
+            if (!errorCard || errorCard.classList.contains('hidden')) return;
+            errorCard.classList.add('hidden');
+            const inSettings = settingsView && settingsView.style.display === 'block';
+            if (statusBar && !inSettings) statusBar.style.display = 'flex';
+        }
+
+        async function runErrorCardAction(action) {
+            if (action === 'openApiKeysPage') {
+                chrome.tabs.create({ url: AI_STUDIO_API_KEYS_URL });
+            } else if (action === 'openSettings') {
+                hideErrorCard();
+                openSettingsView();
+            } else if (action === 'howToGetKey') {
+                const guide = document.getElementById('api-key-modal');
+                if (guide) guide.classList.remove('hidden');
+            } else if (action === 'tryAgain') {
+                hideErrorCard();
+                analyzeCurrentTopic();
+            } else if (action === 'reloadPage') {
+                hideErrorCard();
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (tab) chrome.tabs.reload(tab.id);
+            }
+        }
+
         // Show setup notice
         function showSetupNotice() {
             if (setupNotice) {
@@ -651,9 +734,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                 const articleAccessGranted = await articleAccessPromise;
                 
                 if (!settings.geminiApiKey) {
-                    showSetupNotice();
+                    showErrorCard('noKey');
                     return;
                 }
+                hideErrorCard();
                 
                 // Start analysis
                 extractionInProgress = true;
@@ -714,7 +798,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
                 if (analyzeBtn) analyzeBtn.style.display = 'inline-block'; // Show analyze button again
                 
-                updateStatus('error', analysisErrorMessage(error, analysisResponse, l));
+                const errorKind = (analysisResponse && analysisResponse.errorKind) ||
+                    (/establish connection|receiving end/i.test(String(error.message)) ? 'pageUnreadable' : 'other');
+                showErrorCard(errorKind, analysisErrorMessage(error, analysisResponse, l));
                 if (document.body) document.body.classList.remove('analysis-results-view');
             }
         }
@@ -884,6 +970,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 extractionInProgress = false;
                 updateAnalyzeButton(false);
                 updateStatus('ready', l('statusComplete'));
+                // The summary and stats stay; a failed sentiment part gets a card above them.
+                const sentiment = message.data && message.data.sentiment;
+                if (sentiment && sentiment.errorKind) showErrorCard(sentiment.errorKind, sentiment.details);
                 // Store final results for download
                 if (message.data) {
                     currentAnalysis = message.data;
@@ -898,7 +987,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             } else if (message.action === 'analysisFailed') {
                 extractionInProgress = false;
                 updateAnalyzeButton(false);
-                updateStatus('error', message.error || l('analysisFailed'));
+                showErrorCard(message.errorKind, message.error);
                 
                 const resultsRoot = document.getElementById('results-root');
                 if (resultsRoot) resultsRoot.style.display = 'none';

@@ -100,6 +100,7 @@ const DEFAULT_MODELS = [
  * @param {object} [options.local]  initial chrome.storage.local contents
  * @param {number} [options.localQuota] byte limit for chrome.storage.local
  * @param {Array}  [options.models] models returned by GET /v1beta/models
+ * @param {() => object} [options.modelsReply] replaces the whole GET /v1beta/models reply
  * @param {(request) => object} [options.gemini]
  *        returns a fetch-style response for each generate call
  */
@@ -108,6 +109,7 @@ async function loadBackground({
     local = {},
     localQuota = Infinity,
     models = DEFAULT_MODELS,
+    modelsReply = null,
     gemini = () => geminiText('ok'),
 } = {}) {
     const runtimeMessages = [];
@@ -156,7 +158,7 @@ async function loadBackground({
         }
         if (/\/v1beta\/models(\?|$)/.test(url)) {
             modelListRequests.push({ url, headers: init.headers || {} });
-            return jsonResponse(200, { models });
+            return modelsReply ? modelsReply() : jsonResponse(200, { models });
         }
         const match = url.match(/\/v1beta\/models\/([^:]+):(generateContent|streamGenerateContent)/);
         if (match) {
