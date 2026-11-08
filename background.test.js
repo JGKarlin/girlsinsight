@@ -609,12 +609,12 @@ test('when the essay is done first, the status line says the summary is still on
     assert.equal(status, en.progressSendingSummaryRequest.message);
 });
 
-test('the summary uses medium thinking and the essay the deepest', async () => {
+test('the summary uses low thinking and the essay the deepest', async () => {
     const harness = await loadBackground({ sync: { language: 'en' } });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
     const level = request => request.body.generationConfig.thinkingConfig.thinkingLevel;
-    assert.equal(level(harness.geminiRequests.find(r => !isSentimentRequest(r))), 'MEDIUM');
+    assert.equal(level(harness.geminiRequests.find(r => !isSentimentRequest(r))), 'LOW');
     assert.equal(level(harness.geminiRequests.find(isSentimentRequest)), 'HIGH');
 });
 
@@ -622,6 +622,28 @@ test('the page reader no longer says "Extraction complete. Analyzing..." while G
     const contentScript = require('node:fs').readFileSync(require('node:path').join(__dirname, 'content.js'), 'utf8');
     assert.ok(!contentScript.includes('progressExtractionComplete'));
 });
+
+// ---------------------------------------------------------------- summary prompts
+
+for (const [name, articleText] of [
+    ['an article summary', 'The agency announced the marriage on its website. '.repeat(20)],
+    ['a summary of the opening post', null],
+]) {
+    test(`${name} is asked for as one continuous summary, without sections, headings or labels`, async () => {
+        const harness = await loadBackground({ sync: { language: 'en', geminiApiKey: 'k' }, gemini: () => geminiText('A summary.') });
+        await harness.background.generateSummary(
+            { title: 'Test topic' },
+            [comment(1, 'Opening post text', 10, 1)],
+            articleText
+        );
+        const { prompt } = harness.geminiRequests[0];
+
+        assert.match(prompt, /one continuous summary/i);
+        assert.match(prompt, /sections/i);
+        assert.match(prompt, /headings/i);
+        assert.match(prompt, /"Meaning:"/);
+    });
+}
 
 // ---------------------------------------------------------------- error cards
 

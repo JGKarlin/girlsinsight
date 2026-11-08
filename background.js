@@ -1074,6 +1074,7 @@ You are an expert content creator specializing in ${language} summaries. Your ta
 3. **Do not mention the process of content retrieval.** Do not apologize or comment on whether the provided text is short, incomplete, or only a headline.
 4. Directly provide the summary without any introductory or explanatory phrases.
 5. Keep the summary in ${language} and under 300 words.
+6. Write one continuous summary in plain paragraphs. Do not divide it into sections, and do not add headings, labels such as "Meaning:" or "Background:", or bullet points.
 
 **Article Text:**
 ${articleExcerpt}`;
@@ -1092,6 +1093,7 @@ You are a social media analyst specializing in ${language} content analysis. You
 3. **Do not apologize or comment on the lack of a full article.**
 4. Directly provide the analysis without any introductory or explanatory phrases (e.g., do not start with "This post is about...").
 5. Keep the response in ${language} and under 200 words.
+6. Write one continuous summary in plain paragraphs that covers both the meaning and the intent together. Do not divide it into sections, and do not add headings, labels such as "Meaning:" or "Intent:", or bullet points.
 
 **Title:**
 ${topicData.title}
@@ -1100,12 +1102,11 @@ ${topicData.title}
 ${topComment.slice(0, 1000)}`;
             }
             
-            // Medium thinking: the summary runs alongside the essay, so a little
-            // more depth does not hold up the run. The cap leaves room for
+            // Low thinking keeps the summary quick. The cap leaves room for
             // thinking tokens on top of a sub-300-word summary.
             return await this.callGeminiAPI(prompt, {
                 maxOutputTokens: 8192,
-                thinkingLevel: 'MEDIUM',
+                thinkingLevel: 'LOW',
                 signal,
             });
             
