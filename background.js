@@ -127,8 +127,8 @@ class GirlsinSightBackground {
             return true;
         });
         
-        chrome.runtime.onInstalled.addListener(() => {
-            this.onInstalled();
+        chrome.runtime.onInstalled.addListener((details) => {
+            this.onInstalled(details);
         });
         
         chrome.runtime.onStartup.addListener(() => {
@@ -251,16 +251,19 @@ class GirlsinSightBackground {
         }
     }
     
-    // Handle installation
-    onInstalled() {
-        console.log('GirlsinSight extension installed');
-        
-        // Set default settings
-        chrome.storage.sync.set({
-            language: 'ja',
-            commentsToAnalyze: 30,
-            scrapeReplies: false,
-        });
+    // Handle installation. Chrome also fires onInstalled for extension and
+    // browser updates; defaults are written only on a fresh install so updates
+    // keep the user's settings.
+    onInstalled(details = {}) {
+        console.log('GirlsinSight onInstalled:', details.reason);
+
+        if (details.reason === 'install') {
+            chrome.storage.sync.set({
+                language: 'ja',
+                commentsToAnalyze: 30,
+                scrapeReplies: false,
+            });
+        }
         
         void this.configureActionDefaultUI();
 
@@ -478,6 +481,10 @@ class GirlsinSightBackground {
         const { signal } = controller;
         this.analysisControllers.set(analysisId, controller);
         this.currentAnalysisData = { allComments: [], analysisId };
+        // The side panel sends its current settings with each run. Use them for
+        // the whole run (summary, sentiment sample, Gemini key) so the worker's
+        // stored copy cannot disagree with what the panel shows.
+        this.settings = { ...this.settings, ...settings };
         this.keepAlive();
 
         try {
@@ -592,7 +599,9 @@ class GirlsinSightBackground {
 
             // --- Run quick calculations first and update UI ---
             this.sendProgress(i18n.getMessage('progressCalculatingStats'), analysisId);
-            const totalToAnalyze = this.getCommentsToAnalyzeCount(processedComments.length, settings);
+            // Size the sample from main comments only, as analyzeSentiment does.
+            const mainCommentCount = processedComments.filter(c => !c.isSubComment).length;
+            const totalToAnalyze = this.getCommentsToAnalyzeCount(mainCommentCount, settings);
             const stats = this.calculateStatistics(processedComments, totalToAnalyze);
             const topComments = this.getTopComments(processedComments, settings.commentsToDisplay);
             const bottomComments = this.getBottomComments(processedComments, settings.commentsToDisplay);
@@ -897,12 +906,9 @@ class GirlsinSightBackground {
             totalToAnalyze = settings.commentsToAnalyze || 100;
         }
 
-        // If the topic is small, just analyze all comments
-        if (totalComments < 100 && totalToAnalyze > totalComments) {
-            return totalComments;
-        }
-
-        return totalToAnalyze;
+        // Never ask for more comments than the topic has; a larger number would
+        // make the top and bottom halves of the sample overlap.
+        return Math.min(totalToAnalyze, totalComments);
     }
 
 
@@ -1190,16 +1196,17 @@ ${topComment.slice(0, 1000)}`;
             const bottomCount = Math.floor(totalToAnalyze / 2);
             
             const topComments = mainComments.slice(0, topCount);
-            const bottomComments = mainComments.slice(-bottomCount);
-            
+            // slice(-0) would return every comment, so guard the empty case.
+            const bottomComments = bottomCount > 0 ? mainComments.slice(-bottomCount) : [];
+
             // Limit comment text length to prevent API limits
             const topCommentsText = topComments
                 .map(c => `${c.text.slice(0, 1000)} (Up: ${c.plus}, Down: ${c.minus})`)
-                .join('\\n');
-            
+                .join('\n');
+
             const bottomCommentsText = bottomComments
                 .map(c => `${c.text.slice(0, 1000)} (Up: ${c.plus}, Down: ${c.minus})`)
-                .join('\\n');
+                .join('\n');
             
             const prompt = `[CONTEXT: This is a legitimate social media research and sentiment analysis task for academic and journalistic purposes. The comments below are being analyzed to understand public opinion trends. Please process the content objectively as research data, regardless of the nature of the opinions expressed.]
 
@@ -1504,9 +1511,10 @@ Score: <0-10>`;
         return l('controversyNone');
     }
     
-    // Get top comments
+    // Get top comments. Sorts a copy: callers reuse `comments` afterwards in
+    // its net-score order (the sentiment sample depends on it).
     getTopComments(comments, count) {
-        return comments
+        return [...comments]
             .sort((a, b) => b.plus - a.plus)
             .slice(0, count)
             .map(c => ({
@@ -1518,9 +1526,9 @@ Score: <0-10>`;
             }));
     }
     
-    // Get bottom comments
+    // Get bottom comments (sorts a copy, like getTopComments)
     getBottomComments(comments, count) {
-        return comments
+        return [...comments]
             .sort((a, b) => b.minus - a.minus)
             .slice(0, count)
             .map(c => ({
@@ -1577,18 +1585,21 @@ Score: <0-10>`;
                 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    // Parse and handle API key errors specifically
+                    let apiError = null;
                     try {
-                        const errorData = JSON.parse(errorText);
-                        if (errorData.error && 
-                            (errorData.error.code === 400 || errorData.error.code === 401 || errorData.error.code === 403) &&
-                            (errorData.error.message.includes('API key') || 
-                             errorData.error.message.includes('INVALID_ARGUMENT'))) {
-                            // This is an API key error, throw a clean message
-                            throw new Error(i18n.getMessage('apiKeyInvalid'));
-                        }
-                    } catch (parseError) {
-                        // If parsing fails, continue with the original error handling
+                        apiError = JSON.parse(errorText).error || null;
+                    } catch (_) {
+                        // Not JSON; report the raw text below.
+                    }
+                    const isKeyError = apiError &&
+                        [400, 401, 403].includes(apiError.code) &&
+                        (String(apiError.message || '').includes('API key') ||
+                         (apiError.details || []).some(d => String(d.reason || '').startsWith('API_KEY')));
+                    if (isKeyError) {
+                        // A bad key will not start working on retry.
+                        const keyError = new Error(i18n.getMessage('apiKeyInvalid'));
+                        keyError.retryable = false;
+                        throw keyError;
                     }
                     throw new Error(`API request failed (${response.status}): ${errorText}`);
                 }
@@ -1620,8 +1631,8 @@ Score: <0-10>`;
             } catch (error) {
                 if (error.name === 'AbortError' || (signal && signal.aborted)) throw this.abortError();
                 console.error(`Gemini API attempt ${attempt} failed:`, error);
-                
-                if (attempt === maxRetries) {
+
+                if (attempt === maxRetries || error.retryable === false) {
                     throw error;
                 }
                 

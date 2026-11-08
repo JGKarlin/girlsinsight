@@ -284,6 +284,11 @@ const CommentItem = ({ comment }) => {
     const trimmedText = comment.text.trim();
     
     const parseCommentContent = (text) => {
+        // content.js records an image-only comment as the image's URL.
+        if (/^https?:\/\/\S+\.(?:jpe?g|png|gif|webp|avif)(?:\?\S*)?$/i.test(text)) {
+            return [{ type: 'image', src: text }];
+        }
+
         const imgRegex = /<img\s+src="([^"]+)"[^>]*\/?>/gi;
         const elements = [];
         let lastIndex = 0;

@@ -527,6 +527,12 @@ body {
     margin-bottom: 8px;
 }
 
+.comment-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
 .comment-meta {
     display: flex;
     justify-content: space-between;
