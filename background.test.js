@@ -24,7 +24,7 @@ function topicOfSize(count) {
 }
 
 function sentimentPrompt(harness) {
-    const request = harness.geminiRequests.find(r => r.model === 'gemini-2.5-pro');
+    const request = harness.geminiRequests.find(r => r.prompt.includes('Top-voted comments:'));
     assert.ok(request, 'a sentiment request was sent');
     return request.prompt;
 }
@@ -154,6 +154,52 @@ test('an invalid API key fails at once with the localized invalid-key message', 
         { message: 'API key is invalid or network error' }
     );
     assert.equal(harness.geminiRequests.length, 1);
+});
+
+test('Gemini requests use gemini-3.8-flash, only fields it accepts, and opt out of request storage', async () => {
+    // Contract from the Gemini API reference and the official @google/genai SDK:
+    // sampling parameters are ignored on 3.6+ models, thinking is set with
+    // generationConfig.thinkingConfig.thinkingLevel, and `store` sits at the
+    // top level of the request body.
+    const harness = await loadBackground({ sync: { language: 'en' } });
+    await runFullAnalysis(harness, {
+        comments: polarizedTopic(),
+        settings: { autoCommentCalculation: false, commentsToAnalyze: 10 },
+    });
+
+    assert.equal(harness.geminiRequests.length, 2, 'one summary and one sentiment request');
+    for (const { model, body } of harness.geminiRequests) {
+        assert.equal(model, 'gemini-3.8-flash');
+        assert.equal(body.store, false);
+        assert.equal(body.safetySettings, undefined);
+        const config = body.generationConfig;
+        for (const removed of ['temperature', 'topP', 'topK', 'candidateCount']) {
+            assert.equal(config[removed], undefined, `${removed} is not sent`);
+        }
+        assert.ok(['LOW', 'MEDIUM', 'HIGH'].includes(config.thinkingConfig.thinkingLevel));
+        assert.equal(config.thinkingConfig.thinkingBudget, undefined);
+        assert.ok(config.maxOutputTokens > 0 && config.maxOutputTokens <= 65536);
+    }
+});
+
+test('the reply text joins every answer part and leaves out thought parts', async () => {
+    const reply = () => jsonResponse(200, {
+        candidates: [{
+            content: {
+                role: 'model',
+                parts: [
+                    { text: 'Planning the answer…', thought: true },
+                    { text: 'Hello, ', thoughtSignature: 'c2lnbmF0dXJl' },
+                    { text: 'world.' },
+                ],
+            },
+            finishReason: 'STOP',
+        }],
+    });
+    const harness = await loadBackground({ sync: { language: 'en', geminiApiKey: 'k' }, gemini: reply });
+
+    const text = await harness.background.callGeminiAPI('prompt');
+    assert.equal(text, 'Hello, world.');
 });
 
 test('a temporary server error is retried until Gemini answers', async () => {

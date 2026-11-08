@@ -15,6 +15,10 @@ const { RenderedArticleSession } = globalThis.GirlsinSightRenderedArticle;
 
 const DEBUG_MODE = false; // Set to false to disable source detail reporting
 
+// Google's recommended replacement for gemini-2.5-pro and gemini-2.5-flash,
+// which are deprecated and auto-route to other models from December 1, 2026.
+const GEMINI_MODEL = 'gemini-3.8-flash';
+
 const i18n = {
     messages: {},
     currentLang: 'ja', // Default language
@@ -1161,9 +1165,11 @@ ${topicData.title}
 ${topComment.slice(0, 1000)}`;
             }
             
-            const response = await this.callGeminiAPI(prompt, 'gemini-2.5-flash', {
-                maxOutputTokens: 2048,
-                temperature: 0.7
+            // Low thinking keeps the first visible result quick. The cap leaves
+            // room for thinking tokens on top of a sub-300-word summary.
+            const response = await this.callGeminiAPI(prompt, GEMINI_MODEL, {
+                maxOutputTokens: 8192,
+                thinkingLevel: 'LOW'
             }, 3, { signal });
 
             return response || 'Summary generation failed';
@@ -1241,9 +1247,10 @@ Provide your analysis in the following format:
 Sentiment: <positive/neutral/negative>
 Score: <0-10>`;
             
-            const response = await this.callGeminiAPI(prompt, 'gemini-2.5-pro', {
-                maxOutputTokens: 64000, // Increased token limit for longer essay
-                temperature: 0.5
+            // The essay is the core result, so it gets the deepest thinking.
+            const response = await this.callGeminiAPI(prompt, GEMINI_MODEL, {
+                maxOutputTokens: 64000, // model maximum is 65,536, thinking included
+                thinkingLevel: 'HIGH'
             }, 3, { signal });
             
             if (response) {
@@ -1541,15 +1548,15 @@ Score: <0-10>`;
     }
     
     // Call Gemini API with retry logic
-    async callGeminiAPI(prompt, model = 'gemini-2.5-flash', config = {}, maxRetries = 3, { signal } = {}) {
-        const defaultConfig = {
-            maxOutputTokens: 1024,
-            temperature: 0.7,
-            candidateCount: 1
-        };
-        
-        const finalConfig = { ...defaultConfig, ...config };
-        
+    // Request format for Gemini 3.6+ models: temperature/topP/topK are ignored
+    // and not sent, thinking depth is set with thinkingLevel, and the adjustable
+    // safety filters already default to off, so no safetySettings are needed.
+    // `store: false` keeps requests out of the user's AI Studio request logs,
+    // which new paid-tier projects enable by default since October 26, 2026.
+    async callGeminiAPI(prompt, model = GEMINI_MODEL, { maxOutputTokens = 1024, thinkingLevel } = {}, maxRetries = 3, { signal } = {}) {
+        const generationConfig = { maxOutputTokens };
+        if (thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel };
+
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 this.throwIfAborted(signal);
@@ -1559,14 +1566,8 @@ Score: <0-10>`;
                             text: prompt
                         }]
                     }],
-                    safetySettings: [
-                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_NONE" }
-                    ],
-                    generationConfig: finalConfig
+                    generationConfig,
+                    store: false
                 };
                 
                 console.log(`Gemini API call attempt ${attempt}/${maxRetries}`);
@@ -1612,8 +1613,14 @@ Score: <0-10>`;
                     throw new Error(`API call blocked due to ${reason}. ${safetyRatings ? `Details: ${safetyRatings}` : ''}`);
                 }
 
-                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (text) {
+                // The answer can span several parts; thought parts are the
+                // model's reasoning, not part of the answer.
+                const parts = data.candidates?.[0]?.content?.parts || [];
+                const text = parts
+                    .filter(part => typeof part.text === 'string' && !part.thought)
+                    .map(part => part.text)
+                    .join('');
+                if (text.trim()) {
                     return text;
                 }
                 

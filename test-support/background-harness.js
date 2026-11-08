@@ -106,7 +106,7 @@ async function loadBackground({ sync = {}, gemini = () => geminiText('ok') } = {
         const match = url.match(/\/v1beta\/models\/([^:]+):generateContent/);
         if (match) {
             const body = JSON.parse(init.body);
-            const request = { model: match[1], prompt: body.contents[0].parts[0].text };
+            const request = { model: match[1], prompt: body.contents[0].parts[0].text, body };
             geminiRequests.push(request);
             return gemini(request);
         }
