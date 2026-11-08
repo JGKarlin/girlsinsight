@@ -313,6 +313,10 @@
     "progressSummaryAndSentiment": {
         "message": "AIで概要と感情分析を処理中..."
     },
+    "progressThinkingNote": {
+        "message": "$1 思考中: $2",
+        "description": "$1は実行中の処理、$2はGeminiの最新の思考メモの見出し（Geminiの言葉のまま）。"
+    },
     "geminiBusy": {
         "message": "Geminiが混み合っていて応答できません。混雑時は無料枠のリクエストから先に断られます。数分後にもう一度お試しください。"
     },

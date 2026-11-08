@@ -44,11 +44,12 @@ const SAFETY_SETTINGS = [
 ].map(category => ({ category, threshold: 'OFF' }));
 // Longest wait a rate-limit reply may ask for before we give up instead.
 const MAX_RETRY_WAIT_MS = 30_000;
-// How long to wait for Gemini to start answering before trying again. Under
-// heavy demand Gemini can hold free-tier requests without ever answering.
-// The essay gets longer because its deep thinking comes before any text.
-const RESPONSE_TIMEOUT_MS = 60_000;
-const ESSAY_RESPONSE_TIMEOUT_MS = 180_000;
+// How long a request may go without hearing anything from Gemini before it is
+// given up and tried again. Under heavy demand Gemini can hold free-tier
+// requests without ever answering, or stop partway through a reply. The limit
+// starts over with every piece Gemini sends, including the essay's thinking
+// notes, so a long but healthy reply is never cut off.
+const SILENCE_LIMIT_MS = 30_000;
 // How often streamed essay text is forwarded to the side panel.
 const DRAFT_INTERVAL_MS = 300;
 // Comments sent for sentiment analysis in manual mode, until the user picks a number.
@@ -137,6 +138,15 @@ function nextPacificMidnight(now = Date.now()) {
 // "gemini-3.6-flash" -> "Gemini 3.6 Flash", for messages people read.
 function modelDisplayName(model) {
     return String(model).split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+// The heading of one of Gemini's thinking notes, for the status line: its
+// bold title ("**Weighing the comments**\n\nI am…") or else its first line.
+function thinkingNoteHeading(note) {
+    const text = String(note || '').trim();
+    const bold = text.match(/^\*\*(.+?)\*\*/);
+    const heading = (bold ? bold[1] : text.split('\n')[0]).trim();
+    return heading.length > 80 ? `${heading.slice(0, 79)}…` : heading;
 }
 
 class GirlsinSightBackground {
@@ -474,10 +484,19 @@ class GirlsinSightBackground {
                     }
                     // No sendResponse needed, this is a one-way notification
                     break;
+                case 'mainCommentsReady':
+                    if (sender.tab && request.analysisId && this.analysisPromises.has(request.analysisId)) {
+                        const pending = this.analysisPromises.get(request.analysisId);
+                        if (pending.tabId === sender.tab.id) pending.mainCommentsResolver(request.data);
+                    }
+                    break;
                 case 'allCommentsReady':
                     if (sender.tab && request.analysisId && this.analysisPromises.has(request.analysisId)) {
                         const pending = this.analysisPromises.get(request.analysisId);
-                        if (pending.tabId === sender.tab.id) pending.allCommentsResolver(request.data);
+                        if (pending.tabId === sender.tab.id) {
+                            pending.mainCommentsResolver(request.data); // no effect if they came first
+                            pending.allCommentsResolver(request.data);
+                        }
                     }
                     break;
                     
@@ -603,11 +622,15 @@ class GirlsinSightBackground {
         this.summaryModels = validationResult.summaryModels;
         
         // Setup promises to wait for data from content script
-        let initialDataResolver, allCommentsResolver;
+        // With "Include replies" on, the page reader sends the main comments
+        // first and the full list once every reply page is read; otherwise
+        // the full list alone, which then also stands for the main comments.
+        let initialDataResolver, mainCommentsResolver, allCommentsResolver;
         const initialDataPromise = new Promise(resolve => initialDataResolver = resolve);
+        const mainCommentsPromise = new Promise(resolve => mainCommentsResolver = resolve);
         const allCommentsPromise = new Promise(resolve => allCommentsResolver = resolve);
 
-        this.analysisPromises.set(analysisId, { tabId, initialDataResolver, allCommentsResolver });
+        this.analysisPromises.set(analysisId, { tabId, initialDataResolver, mainCommentsResolver, allCommentsResolver });
 
             // --- Send a single command to start the phased extraction ---
             await this.awaitWithSignal(chrome.tabs.sendMessage(tabId, {
@@ -629,15 +652,19 @@ class GirlsinSightBackground {
             // comments, then Gemini) need different inputs, so they run side by
             // side. There is one status line: it names whichever steps are
             // still running.
+            // While Gemini is still thinking about the essay, the heading of
+            // its latest thinking note is added.
             const running = { summary: true, sentiment: false };
+            let thinkingHeading = null;
             const showRunningStep = () => {
-                if (running.summary && running.sentiment) {
-                    this.sendProgress(i18n.getMessage('progressSummaryAndSentiment'), analysisId);
-                } else if (running.sentiment) {
-                    this.sendProgress(i18n.getMessage('progressSendingSentimentRequest'), analysisId);
-                } else if (running.summary) {
-                    this.sendProgress(i18n.getMessage('progressSendingSummaryRequest'), analysisId);
-                }
+                const step = running.summary && running.sentiment ? 'progressSummaryAndSentiment'
+                    : running.sentiment ? 'progressSendingSentimentRequest'
+                        : running.summary ? 'progressSendingSummaryRequest' : null;
+                if (!step) return;
+                const message = i18n.getMessage(step);
+                this.sendProgress(running.sentiment && thinkingHeading
+                    ? i18n.getMessage('progressThinkingNote', [message, thinkingHeading])
+                    : message, analysisId);
             };
             // The summary's own steps only show while the essay has not started.
             const summaryProgress = message => {
@@ -674,43 +701,62 @@ class GirlsinSightBackground {
             })();
 
             const sentimentPhase = (async () => {
-                const allCommentsResponse = await this.awaitWithSignal(allCommentsPromise, signal);
-                if (!allCommentsResponse || !allCommentsResponse.success) {
+                // The essay reads main comments only, so it starts as soon as
+                // they are in; reply pages, if any, keep loading for the stats.
+                const mainCommentsResponse = await this.awaitWithSignal(mainCommentsPromise, signal);
+                if (!mainCommentsResponse || !mainCommentsResponse.success) {
                     throw new Error('Failed to extract all comments.');
                 }
+                const essayComments = this.processComments(mainCommentsResponse.data.comments);
 
-                // Process comments once for all analyses
-                const { comments: rawComments, activityStats } = allCommentsResponse.data;
-                const processedComments = this.processComments(rawComments);
-                this.currentAnalysisData.allComments = processedComments;
+                const statsPhase = (async () => {
+                    const allCommentsResponse = await this.awaitWithSignal(allCommentsPromise, signal);
+                    if (!allCommentsResponse || !allCommentsResponse.success) {
+                        throw new Error('Failed to extract all comments.');
+                    }
 
-                // --- Quick calculations first, so the panel can show them ---
-                this.sendProgress(i18n.getMessage('progressCalculatingStats'), analysisId);
-                // Size the sample from main comments only, as analyzeSentiment does.
-                const mainCommentCount = processedComments.filter(c => !c.isSubComment).length;
-                const totalToAnalyze = this.getCommentsToAnalyzeCount(mainCommentCount, settings);
-                const stats = this.calculateStatistics(processedComments, totalToAnalyze);
-                const topComments = this.getTopComments(processedComments, settings.commentsToDisplay);
-                const bottomComments = this.getBottomComments(processedComments, settings.commentsToDisplay);
+                    // Process comments once for all analyses
+                    const { comments: rawComments, activityStats } = allCommentsResponse.data;
+                    const processedComments = this.processComments(rawComments);
+                    this.currentAnalysisData.allComments = processedComments;
 
-                this.currentAnalysisData.stats = stats;
-                this.currentAnalysisData.topComments = topComments;
-                this.currentAnalysisData.bottomComments = bottomComments;
-                this.currentAnalysisData.activityStats = activityStats;
-                // Only the display settings the panel needs; never the API key.
-                const displaySettings = {
-                    commentsToDisplay: settings.commentsToDisplay,
-                    scrapeReplies: settings.scrapeReplies,
-                };
-                this.currentAnalysisData.settings = displaySettings;
-                this.sendPartialResults('stats', { stats, topComments, bottomComments, activityStats, settings: displaySettings }, analysisId);
+                    this.sendProgress(i18n.getMessage('progressCalculatingStats'), analysisId);
+                    // Size the sample from main comments only, as analyzeSentiment does.
+                    const mainCommentCount = processedComments.filter(c => !c.isSubComment).length;
+                    const totalToAnalyze = this.getCommentsToAnalyzeCount(mainCommentCount, settings);
+                    const stats = this.calculateStatistics(processedComments, totalToAnalyze);
+                    const topComments = this.getTopComments(processedComments, settings.commentsToDisplay);
+                    const bottomComments = this.getBottomComments(processedComments, settings.commentsToDisplay);
+
+                    this.currentAnalysisData.stats = stats;
+                    this.currentAnalysisData.topComments = topComments;
+                    this.currentAnalysisData.bottomComments = bottomComments;
+                    this.currentAnalysisData.activityStats = activityStats;
+                    // Only the display settings the panel needs; never the API key.
+                    const displaySettings = {
+                        commentsToDisplay: settings.commentsToDisplay,
+                        scrapeReplies: settings.scrapeReplies,
+                    };
+                    this.currentAnalysisData.settings = displaySettings;
+                    this.sendPartialResults('stats', { stats, topComments, bottomComments, activityStats, settings: displaySettings }, analysisId);
+                    if (running.sentiment) showRunningStep();
+                })();
 
                 // --- The long sentiment essay ---
                 running.sentiment = true;
                 showRunningStep();
-                const sentimentResult = await this.analyzeSentiment(processedComments, topicData, { signal, analysisId });
+                const essayPhase = this.analyzeSentiment(essayComments, topicData, {
+                    signal,
+                    analysisId,
+                    onThinking: heading => {
+                        thinkingHeading = heading;
+                        showRunningStep();
+                    },
+                });
+                const [, sentimentResult] = await Promise.all([statsPhase, essayPhase]);
                 this.throwIfAborted(signal);
                 running.sentiment = false;
+                thinkingHeading = null;
                 this.currentAnalysisData.sentiment = sentimentResult;
                 this.sendPartialResults('sentiment', { sentiment: sentimentResult }, analysisId);
                 if (running.summary) showRunningStep();
@@ -1173,7 +1219,7 @@ ${topComment.slice(0, 1000)}`;
     }
     
     // Analyze sentiment using Gemini API
-    async analyzeSentiment(comments, topicData, { signal, analysisId = null } = {}) {
+    async analyzeSentiment(comments, topicData, { signal, analysisId = null, onThinking = null } = {}) {
         try {
             const isJapanese = this.settings.language === 'ja';
             const language = isJapanese ? 'Japanese' : 'English';
@@ -1238,13 +1284,27 @@ Score: <0-10>`;
             // is streamed to the panel as it is written. Thinking and the essay
             // share the output limit (model maximum 65,536); if thinking uses it
             // up, one more try with less thinking usually finishes.
+            // While Gemini thinks, the heading of its latest note goes to
+            // onThinking; once the essay itself arrives, onThinking(null).
             const drafts = this.createDraftSender(analysisId);
+            let thinking = false;
             const request = thinkingLevel => this.callGeminiAPI(prompt, {
                 maxOutputTokens: 64000,
                 thinkingLevel,
-                onText: drafts.update,
+                onText: text => {
+                    if (thinking && text) {
+                        thinking = false;
+                        if (onThinking) onThinking(null);
+                    }
+                    drafts.update(text);
+                },
+                onThought: note => {
+                    const heading = thinkingNoteHeading(note);
+                    if (!heading) return;
+                    thinking = true;
+                    if (onThinking) onThinking(heading);
+                },
                 signal,
-                timeoutMs: ESSAY_RESPONSE_TIMEOUT_MS,
             });
             let response;
             try {
@@ -1537,19 +1597,24 @@ Score: <0-10>`;
     // `store: false` keeps requests out of the user's AI Studio request logs,
     // which new paid-tier projects enable by default since October 26, 2026.
     // With onText, the reply is streamed and onText receives the text so far.
+    // With onThought (streamed replies only), Gemini also sends short notes
+    // while it thinks, and onThought receives each one; they are never part
+    // of the reply text.
     async callGeminiAPI(prompt, {
         models = this.geminiModels || [this.geminiModel || GEMINI_MODEL],
         maxOutputTokens = 8192,
         thinkingLevel = 'LOW',
         onText = null,
+        onThought = null,
         signal,
         maxAttempts = 3,
-        timeoutMs = RESPONSE_TIMEOUT_MS,
+        silenceMs = SILENCE_LIMIT_MS,
     } = {}) {
+        const thinkingConfig = onThought ? { thinkingLevel, includeThoughts: true } : { thinkingLevel };
         const body = JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             safetySettings: SAFETY_SETTINGS,
-            generationConfig: { maxOutputTokens, thinkingConfig: { thinkingLevel } },
+            generationConfig: { maxOutputTokens, thinkingConfig },
             store: false,
         });
         const method = onText ? 'streamGenerateContent?alt=sse' : 'generateContent';
@@ -1566,12 +1631,18 @@ Score: <0-10>`;
                 debugLog(`Gemini ${model} attempt ${attempt}/${maxAttempts}`);
 
                 // Each attempt has its own abort: the run's signal (panel closed)
-                // or the time limit for Gemini to start answering.
+                // or the silence limit, which starts over whenever Gemini sends
+                // anything.
                 const attemptAbort = new AbortController();
                 const stopAttempt = () => attemptAbort.abort();
                 if (signal) signal.addEventListener('abort', stopAttempt, { once: true });
                 let timedOut = false;
-                const timer = setTimeout(() => { timedOut = true; attemptAbort.abort(); }, timeoutMs);
+                let timer = null;
+                const heardFromGemini = () => {
+                    clearTimeout(timer);
+                    timer = setTimeout(() => { timedOut = true; attemptAbort.abort(); }, silenceMs);
+                };
+                heardFromGemini();
                 try {
                     let response;
                     try {
@@ -1585,23 +1656,31 @@ Score: <0-10>`;
                             body,
                         });
                     } catch (networkError) {
-                        if (timedOut && !(signal && signal.aborted)) {
-                            throw this.geminiError(i18n.getMessage('geminiBusy'), {
-                                retryable: true, code: 'BUSY', moveOn: true, cooldownUntil: Date.now() + BUSY_COOLDOWN_MS,
-                            });
-                        }
                         if (networkError.name === 'AbortError') throw networkError;
                         throw this.geminiError(`Network error: ${networkError.message}`, { retryable: true });
-                    } finally {
-                        clearTimeout(timer);
                     }
+                    heardFromGemini();
                     if (!response.ok) throw await this.geminiHttpError(response);
 
                     const reply = { text: '', finishReason: null, blockReason: null };
-                    if (onText) await this.readGeminiStream(response, reply, onText);
-                    else this.absorbGeminiChunk(reply, await response.json());
+                    if (onText) {
+                        await this.readGeminiStream(response, reply, {
+                            onText, onThought, onPiece: heardFromGemini, signal: attemptAbort.signal,
+                        });
+                    } else {
+                        this.absorbGeminiChunk(reply, await response.json());
+                    }
                     return this.finishGeminiReply(reply);
+                } catch (error) {
+                    // Gemini went quiet: treat it like a busy model and move on.
+                    if (timedOut && !(signal && signal.aborted)) {
+                        throw this.geminiError(i18n.getMessage('geminiBusy'), {
+                            retryable: true, code: 'BUSY', moveOn: true, cooldownUntil: Date.now() + BUSY_COOLDOWN_MS,
+                        });
+                    }
+                    throw error;
                 } finally {
+                    clearTimeout(timer);
                     if (signal) signal.removeEventListener('abort', stopAttempt);
                 }
             } catch (error) {
@@ -1754,6 +1833,8 @@ Score: <0-10>`;
 
     // Adds one GenerateContentResponse (a whole reply or one streamed chunk).
     // Thought parts are the model's reasoning, not part of the answer.
+    // Adds one reply chunk to `reply`. Thinking notes (parts marked thought)
+    // are collected in reply.thoughts, never in reply.text.
     absorbGeminiChunk(reply, chunk) {
         if (chunk.error) {
             throw this.geminiError(`API error: ${chunk.error.message}`, { retryable: (chunk.error.code || 0) >= 500 });
@@ -1764,17 +1845,27 @@ Score: <0-10>`;
         const candidate = chunk.candidates && chunk.candidates[0];
         if (!candidate) return;
         for (const part of (candidate.content && candidate.content.parts) || []) {
-            if (typeof part.text === 'string' && !part.thought) reply.text += part.text;
+            if (typeof part.text !== 'string') continue;
+            if (part.thought) (reply.thoughts = reply.thoughts || []).push(part.text);
+            else reply.text += part.text;
         }
         if (candidate.finishReason) reply.finishReason = candidate.finishReason;
     }
 
     // Reads a streamGenerateContent?alt=sse body: "data: {json}" events
-    // separated by blank lines.
-    async readGeminiStream(response, reply, onText) {
+    // separated by blank lines. onPiece is called whenever anything arrives;
+    // aborting `signal` stops the read even if Gemini has gone quiet.
+    async readGeminiStream(response, reply, { onText, onThought = null, onPiece = () => {}, signal = null }) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        const stopped = new Promise((_, reject) => {
+            if (!signal) return;
+            const stop = () => reject(this.abortError());
+            if (signal.aborted) stop();
+            else signal.addEventListener('abort', stop, { once: true });
+        });
+        stopped.catch(() => {}); // only observed through the race below
         const handleEvent = event => {
             const data = event.split(/\r?\n/)
                 .filter(line => line.startsWith('data:'))
@@ -1782,16 +1873,24 @@ Score: <0-10>`;
                 .join('\n');
             if (!data) return;
             const before = reply.text;
+            const notesBefore = (reply.thoughts || []).length;
             this.absorbGeminiChunk(reply, JSON.parse(data));
+            if (onThought) (reply.thoughts || []).slice(notesBefore).forEach(note => onThought(note));
             if (reply.text !== before) onText(reply.text);
         };
-        for (;;) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const events = buffer.split(/\r?\n\r?\n/);
-            buffer = events.pop();
-            events.forEach(handleEvent);
+        try {
+            for (;;) {
+                const { value, done } = await Promise.race([reader.read(), stopped]);
+                if (done) break;
+                onPiece();
+                buffer += decoder.decode(value, { stream: true });
+                const events = buffer.split(/\r?\n\r?\n/);
+                buffer = events.pop();
+                events.forEach(handleEvent);
+            }
+        } catch (error) {
+            reader.cancel().catch(() => {});
+            throw error;
         }
         buffer += decoder.decode();
         if (buffer.trim()) handleEvent(buffer);

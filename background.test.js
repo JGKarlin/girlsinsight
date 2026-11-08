@@ -4,11 +4,13 @@ const assert = require('node:assert/strict');
 const {
     comment,
     geminiStream,
+    geminiStreamChunks,
     geminiText,
     jsonResponse,
     loadBackground,
     runFullAnalysis,
     sentimentSample,
+    stalledStream,
 } = require('./test-support/background-harness.js');
 const en = require('./_locales/en/messages.json');
 
@@ -369,9 +371,13 @@ const neverAnswers = request => new Promise((_, reject) => request.signal.addEve
     reject(error);
 }));
 
-test('a summary request Gemini never answers is given up after 60 s and sent to the fallback model', async () => {
+// How long a request may go without hearing anything from Gemini.
+const SILENCE_LIMIT_MS = 30_000;
+
+test('a summary request Gemini never answers is given up after 30 s of silence and sent to the fallback model', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
+        heldTimerDelays: [], // the silence limit fires
         gemini: request => (request.model === 'gemini-3.8-flash' ? neverAnswers(request) : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
     });
     const outcome = await Promise.race([
@@ -381,15 +387,51 @@ test('a summary request Gemini never answers is given up after 60 s and sent to 
 
     assert.notEqual(outcome, 'still stuck', 'the run never moved past the summary request');
     assert.equal(outcome.result.success, true);
-    assert.ok(harness.timerDelays.includes(60_000), 'the summary request had a 60 s time limit');
+    assert.ok(harness.timerDelays.includes(SILENCE_LIMIT_MS), 'the summary request had a 30 s silence limit');
+    assert.ok(!harness.timerDelays.includes(60_000), 'the old 60 s limit is gone');
     const summary = harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary');
     assert.equal(summary.data.summary, 'A summary.');
 });
 
-test('the essay waits up to 3 minutes for Gemini to start, since its deep thinking comes first', async () => {
+test('the essay has the same 30 s silence limit instead of a 3-minute wait', async () => {
     const harness = await loadBackground({ sync: { language: 'en' } });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
-    assert.ok(harness.timerDelays.includes(180_000));
+    assert.ok(harness.timerDelays.includes(SILENCE_LIMIT_MS));
+    assert.ok(!harness.timerDelays.includes(180_000));
+});
+
+test('the silence limit starts over each time Gemini sends part of its reply', async () => {
+    const limitsSet = async pieces => {
+        const harness = await loadBackground({
+            sync: { language: 'en' },
+            gemini: scriptedGemini(() => geminiStream(pieces)),
+        });
+        await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+        return harness.timerDelays.filter(ms => ms === SILENCE_LIMIT_MS).length;
+    };
+    const onePiece = await limitsSet(['An essay.\nSentiment: Positive\nScore: 7']);
+    const fourPieces = await limitsSet(['An ', 'essay', '.\nSentiment: Positive', '\nScore: 7']);
+    assert.equal(fourPieces - onePiece, 3);
+});
+
+test('an essay that stops partway is given up after 30 s of silence and written by the fallback model', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        heldTimerDelays: [], // the silence limit fires
+        gemini: scriptedGemini(request => (request.model === 'gemini-3.8-flash'
+            ? stalledStream(['Half an ess'])
+            : geminiText('A full essay.\nSentiment: Positive\nScore: 7'))),
+    });
+    const outcome = await Promise.race([
+        runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 }),
+        new Promise(resolve => setTimeout(() => resolve('still stuck'), 2000)),
+    ]);
+
+    assert.notEqual(outcome, 'still stuck', 'the run waited forever for the rest of the essay');
+    assert.equal(outcome.result.success, true);
+    assert.deepEqual(harness.geminiRequests.filter(isSentimentRequest).map(r => r.model), ['gemini-3.8-flash', 'gemini-3.6-flash']);
+    assert.match(outcome.sentiment.details, /A full essay/);
+    assert.doesNotMatch(outcome.sentiment.details, /Half an ess/);
 });
 
 test('when the main model is too busy the next try uses the fallback model and the run finishes', async () => {
@@ -958,4 +1000,112 @@ test('an essay without a verdict gets no score instead of a made-up neutral 5', 
     assert.equal(result.score, null);
     assert.equal(result.label, null);
     assert.equal(result.details, 'An essay that never gives a verdict.');
+});
+
+// ---------------------------------------------------------------- thinking notes
+
+// Gemini's thinking notes (thought: true) come before the essay itself.
+function thinkingThenEssay(notes = [
+    '**Weighing the downvoted comments**\n\nI am looking at which comments the community rejected.',
+    '**Drafting the essay**\n\nNow I put it together.',
+]) {
+    return geminiStreamChunks([
+        ...notes.map(text => ({ parts: [{ text, thought: true }] })),
+        { parts: [{ text: 'The community celebrated. ' }] },
+        { parts: [{ text: 'Sentiment: positive\nScore: 8' }], finishReason: 'STOP' },
+    ]);
+}
+
+const statusTexts = harness => harness.runtimeMessages
+    .filter(m => m.action === 'analysisProgress').map(m => m.message);
+const thinkingStatus = (step, heading) => en.progressThinkingNote.message.replace('$1', step).replace('$2', heading);
+
+// Runs an analysis whose essay is only answered once the summary is on screen,
+// so the status line shows the essay step on its own.
+async function runWithEssayAfterSummary(essay) {
+    let harness = null;
+    harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: async request => {
+            if (!isSentimentRequest(request)) return geminiText('A summary.');
+            await until(() => harness.runtimeMessages.some(m => m.action === 'partialResults' && m.type === 'summary'));
+            return essay();
+        },
+    });
+    const outcome = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+    assert.equal(harness.geminiRequests.filter(isSentimentRequest).length, 1, 'the essay was asked for once, with no retry');
+    return { harness, outcome };
+}
+
+test('the essay asks Gemini to send short notes while it thinks; the summary does not', async () => {
+    const harness = await loadBackground({ sync: { language: 'en' } });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+    const thinkingConfig = request => request.body.generationConfig.thinkingConfig;
+    assert.equal(thinkingConfig(harness.geminiRequests.find(isSentimentRequest)).includeThoughts, true);
+    assert.ok(!thinkingConfig(harness.geminiRequests.find(r => !isSentimentRequest(r))).includeThoughts);
+});
+
+test('while Gemini thinks about the essay, the status line shows the heading of its latest note', async () => {
+    const { harness } = await runWithEssayAfterSummary(() => thinkingThenEssay());
+    const statuses = statusTexts(harness);
+    const step = en.progressSendingSentimentRequest.message;
+    assert.ok(statuses.includes(thinkingStatus(step, 'Weighing the downvoted comments')), JSON.stringify(statuses));
+    assert.ok(statuses.includes(thinkingStatus(step, 'Drafting the essay')), JSON.stringify(statuses));
+    assert.ok(!statuses.some(s => s.includes('I am looking')), 'only the heading is shown, not the whole note');
+});
+
+test('a thinking note without a bold heading shows its first line', async () => {
+    const { harness } = await runWithEssayAfterSummary(() => thinkingThenEssay(['Considering when the news broke\nMore detail here.']));
+    assert.ok(statusTexts(harness).includes(thinkingStatus(en.progressSendingSentimentRequest.message, 'Considering when the news broke')));
+});
+
+test('once the essay starts arriving, the status line drops the thinking note', async () => {
+    const { harness } = await runWithEssayAfterSummary(() => thinkingThenEssay());
+    const statuses = statusTexts(harness);
+    const lastNote = statuses.lastIndexOf(thinkingStatus(en.progressSendingSentimentRequest.message, 'Drafting the essay'));
+    const done = statuses.indexOf(en.progressSentimentReceived.message);
+    assert.ok(lastNote >= 0 && done > lastNote, JSON.stringify(statuses));
+    assert.ok(statuses.slice(lastNote + 1, done).includes(en.progressSendingSentimentRequest.message), JSON.stringify(statuses));
+});
+
+test('thinking notes never become part of the essay', async () => {
+    const { outcome } = await runWithEssayAfterSummary(() => thinkingThenEssay());
+    assert.equal(outcome.sentiment.details.includes('Weighing'), false);
+    assert.ok(outcome.drafts.every(text => !text.includes('I am looking')));
+    assert.match(outcome.sentiment.details, /The community celebrated/);
+});
+
+// ---------------------------------------------------------------- essay before reply pages
+
+test('with replies on, the essay starts from the main comments while reply pages are still loading', async () => {
+    const main = polarizedTopic();
+    const replies = main.map(parent => comment(`${parent.number}.1`, `reply to ${parent.number}`, 1, 1, {
+        isSubComment: true,
+        parentNumber: parent.number,
+    }));
+    let releaseReplies = null;
+    const repliesLoaded = new Promise(resolve => { releaseReplies = resolve; });
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: scriptedGemini(() => {
+            releaseReplies(); // the reply pages only finish once the essay has been asked for
+            return geminiText('An essay.\nSentiment: Positive\nScore: 7');
+        }),
+    });
+    const outcome = await Promise.race([
+        runFullAnalysis(harness, {
+            comments: [...main, ...replies],
+            mainComments: main,
+            allCommentsGate: repliesLoaded,
+            settings: { ...manual10, scrapeReplies: true },
+        }),
+        new Promise(resolve => setTimeout(() => resolve('waiting for reply pages'), 2000)),
+    ]);
+
+    assert.notEqual(outcome, 'waiting for reply pages', 'the essay waited for the reply pages');
+    assert.equal(outcome.result.success, true);
+    const sample = sentimentSample(sentimentPrompt(harness));
+    assert.deepEqual([...sample.top].sort(), ['LOVED-1', 'LOVED-2', 'LOVED-3', 'LOVED-4', 'LOVED-5']);
+    assert.deepEqual([...sample.bottom].sort(), ['HATED-1', 'HATED-2', 'HATED-3', 'HATED-4', 'HATED-5']);
+    assert.equal(outcome.stats.totalCommentsAndReplies, main.length + replies.length, 'the stats still count the replies');
 });

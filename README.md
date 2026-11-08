@@ -115,16 +115,21 @@ sequenceDiagram
     par Summary
         B->>T: Render linked article
         T-->>B: Article text
-        B->>G: Summary request (gemini-3.8-flash, low thinking, streamed)
+        B->>G: Summary request (gemini-3.5-flash-lite, low thinking, streamed)
         G-->>B: Summary text as it is written
         B-->>P: Summary fills in
     and Comments, then sentiment
-        C->>B: Fetch later pages and replies
-        C-->>B: All comments and activity
-        B-->>P: Statistics and top/bottom comments appear
-        B->>G: Sentiment request (gemini-3.8-flash, high thinking, streamed)
-        G-->>B: Essay text as it is written
-        B-->>P: Essay draft fills in
+        C->>B: Fetch later pages
+        C-->>B: Main comments
+        par Sentiment
+            B->>G: Sentiment request (gemini-3.8-flash, high thinking, streamed)
+            G-->>B: Thinking notes, then essay text as it is written
+            B-->>P: Latest thinking note in the status line, then the essay draft
+        and Statistics
+            C->>B: Fetch reply threads (only if Scrape replies is on)
+            C-->>B: All comments and activity
+            B-->>P: Statistics and top/bottom comments appear
+        end
     end
     B-->>P: Score and final essay, result saved, analysisComplete
 ```
@@ -134,9 +139,9 @@ sequenceDiagram
 3. **Key check.** The service worker lists the Gemini models the key can use and picks one (see [Gemini API usage](#gemini-api-usage)). An invalid key, or a key with no usable model, stops the run with a clear message before any comments are read.
 4. **Opening post first.** The content script loads page 1 if you are on a later page, then sends the topic title, page-1 URL, post date and opening post right away, so the summary can start while the rest of the thread is still being read.
 5. **Summary, in parallel.** If the opening post links to an external page and site access was granted, the [article pipeline](#article-retrieval) retrieves up to 15,000 characters of article text and Gemini summarizes it in under 300 words. Otherwise Gemini interprets the title and opening post in under 200 words. Either way the summary is one continuous text, without sections, headings or labels. It is streamed, so the panel fills it in as it is written.
-6. **Full extraction, in parallel.** The content script walks every page of the topic from page 1, fetching later pages through the service worker with a 200 ms pause between pages. For each comment it records the number, date (read as Japan time, which GirlsChannel uses), upvotes, downvotes, text and any links. An image-only comment is recorded as its image URL. If **Scrape replies** is on, reply threads are fetched five at a time with a 300 ms pause between batches. Comments are then de-duplicated, sorted by number with replies in order under their parent, and given an activity score.
-7. **Statistics.** As soon as the extraction is done, without waiting for the summary, the service worker drops empty comments, works out each comment's net score and upvote ratio, and sends the statistics and the top and bottom comment lists to the panel.
-8. **Sentiment, alongside the summary.** The essay needs only the comments, so it starts right after the statistics, while the summary may still be running. The status line shows the step still running: the sentiment request while the essay is being written, then the summary request if the summary is still on its way. The service worker chooses a sample of main comments (see [Sample size](#sample-size)): half from the top by net score and half from the bottom. Each comment is cut to 1,000 characters and labeled with its vote counts. Gemini is told to treat heavily upvoted comments as the majority view and heavily downvoted comments as views the community rejects. It writes a continuous essay of about 500 words and ends with a `Sentiment:` line and a `Score:` line. The essay is streamed, so the panel fills it in as it arrives. The extension reads only those closing lines, sets the label from the score (0–3 negative, 4–6 neutral, 7–10 positive) and removes them from the essay text. If Gemini's reasoning uses up the output limit before the essay finishes, the request is tried once more with less reasoning. If it still cannot finish, or the essay has no score, the panel shows no score and says why.
+6. **Full extraction, in parallel.** The content script walks every page of the topic from page 1, fetching later pages through the service worker with a 200 ms pause between pages. For each comment it records the number, date (read as Japan time, which GirlsChannel uses), upvotes, downvotes, text and any links. An image-only comment is recorded as its image URL. If **Scrape replies** is on, the main comments are sent to the service worker first, so the essay can start, and then reply threads are fetched five at a time with a 300 ms pause between batches. Comments are then de-duplicated, sorted by number with replies in order under their parent, and given an activity score.
+7. **Statistics.** As soon as every comment has been read, including reply threads if they are included, and without waiting for the summary, the service worker drops empty comments, works out each comment's net score and upvote ratio, and sends the statistics and the top and bottom comment lists to the panel.
+8. **Sentiment, alongside the summary.** The essay needs only the main comments, so it starts as soon as they are read, while the summary may still be running and, with **Scrape replies** on, before the reply threads have been fetched. The status line shows the step still running: the sentiment request while the essay is being written, then the summary request if the summary is still on its way. Most of the essay's time is Gemini thinking before it writes anything: in a November 2026 test, about 25 seconds of thinking at the high level against about 5 seconds of writing. Meanwhile Gemini sends short notes on what it is thinking about, and the status line adds the heading of the latest one, for example "Processing sentiment analysis... Thinking: Weighing the downvoted comments". Headings are in Gemini's own words, usually English. Once the essay starts arriving, the note is dropped. The notes are never part of the essay. The service worker chooses a sample of main comments (see [Sample size](#sample-size)): half from the top by net score and half from the bottom. Each comment is cut to 1,000 characters and labeled with its vote counts. Gemini is told to treat heavily upvoted comments as the majority view and heavily downvoted comments as views the community rejects. It writes a continuous essay of about 500 words and ends with a `Sentiment:` line and a `Score:` line. The essay is streamed, so the panel fills it in as it arrives. The extension reads only those closing lines, sets the label from the score (0–3 negative, 4–6 neutral, 7–10 positive) and removes them from the essay text. If Gemini's reasoning uses up the output limit before the essay finishes, the request is tried once more with less reasoning. If it still cannot finish, or the essay has no score, the panel shows no score and says why.
 9. **Completion.** The result is saved in local storage (the five most recent topics are kept) and the panel shows the download button.
 
 Long runs keep the service worker alive with a lightweight ping every 20 seconds. Every step listens to one cancellation signal, so **Stop Analysis**, or closing the panel, takes effect wherever the run is.
@@ -171,7 +176,7 @@ All requests go directly from your browser to `https://generativelanguage.google
 |---|---|---|
 | API key check | | `GET /models` (lists the models the key can use) |
 | Summary | `gemini-3.5-flash-lite`, then the Flash models | `streamGenerateContent`, thinking level `LOW`, up to 8,192 output tokens |
-| Sentiment essay | `gemini-3.8-flash`, then `gemini-3.6-flash`, then `gemini-3.5-flash-lite` | `streamGenerateContent`, thinking level `HIGH` (one retry at `MEDIUM` if cut off), up to 64,000 output tokens |
+| Sentiment essay | `gemini-3.8-flash`, then `gemini-3.6-flash`, then `gemini-3.5-flash-lite` | `streamGenerateContent`, thinking level `HIGH` (one retry at `MEDIUM` if cut off), thinking notes on (`includeThoughts`), up to 64,000 output tokens |
 
 The essay is the main result, so it goes to `gemini-3.8-flash`, Google's recommended replacement for `gemini-2.5-pro`, with the deepest thinking; its 65,536-token output limit (thinking included) fits the long essay. The summary goes to `gemini-3.5-flash-lite`, Google's fastest 3.5 model, with low thinking. Both are streamed, so the panel shows them as they are written.
 
@@ -183,7 +188,7 @@ The essay is the main result, so it goes to `gemini-3.8-flash`, Google's recomme
 
 **Retries.** A request is tried up to three times, but only when a retry can help: network errors and server errors (waiting 1 second, then 2), a busy Gemini, and per-minute rate limits, which wait as long as Gemini asks (up to 30 seconds). A model that is out of free requests or asks for a longer wait is replaced by the next model on the list; if there is none, the limit is reported at once. An invalid key, depleted prepaid credits, a missing model, a refused request, a blocked or safety-stopped reply, or a reply cut off at the token limit fails at once, since repeating it would cost tokens without changing the outcome. A reply cut off at the token limit is never shown as if it were complete. If the first request (the summary) finds the key invalid or its prepaid credits depleted, the run stops there, since the sentiment request would fail the same way.
 
-**Busy periods.** Gemini serves free-tier requests from capacity it sheds first under heavy demand, so free-tier keys can get a 503 "high demand" error or no answer at all; the newest model is turned away most. A request that Gemini has not started answering within 60 seconds (3 minutes for the essay, whose deep thinking comes first) is treated as busy, and the request moves to the next model as described above.
+**Busy periods.** Gemini serves free-tier requests from capacity it sheds first under heavy demand, so free-tier keys can get a 503 "high demand" error or no answer at all; the newest model is turned away most. A request that hears nothing from Gemini for 30 seconds, whether before the reply starts or partway through it, is treated as busy, and the request moves to the next model as described above. The 30 seconds start over with every piece Gemini sends, including the essay's thinking notes, so a long but healthy reply is never cut off, and a stuck request is given up within about 30 seconds.
 
 **Request format.** Sampling parameters such as `temperature` are not sent, because current models ignore them. The four adjustable safety filters (harassment, hate speech, sexually explicit, dangerous content) are set explicitly to `OFF`, so a change to Google's defaults cannot start refusing ordinary forum threads; each prompt also states that the task is research. Every request is sent with `store: false`, which keeps it out of your AI Studio project's request logs, a paid-tier feature that new paid projects turn on by default. It does not change how Google otherwise handles API data under its terms.
 
@@ -197,6 +202,7 @@ The side panel, service worker and content script communicate with `chrome.runti
 | `startPhasedExtraction` | worker → content | Start reading the topic. |
 | `initialDataReady` | content → worker | Title, URL, post date and opening post. |
 | `fetchPage` | content → worker | Fetch a later page or a reply thread. |
+| `mainCommentsReady` | content → worker | The main comments, sent before reply threads are fetched (only when **Scrape replies** is on and there are replies), so the essay can start. |
 | `allCommentsReady` | content → worker | Every comment plus the activity score, or an error. |
 | `extractionProgress`, `analysisProgress` | → panel | Status text for the progress line. |
 | `partialResults` | worker → panel | `summary`, `stats`, `sentimentDraft` (streamed essay text, at most every 300 ms) or `sentiment` section data. |
@@ -310,7 +316,8 @@ node --test
 
 - `article-pipeline.test.js` and `rendered-article-session.test.js` cover article retrieval and the site permissions requested.
 - `girlschannel-parsing.test.js` covers topic page addresses, Japan-time dates and comment ordering.
-- `background.test.js` loads the real service worker with Chrome APIs and Gemini replaced by fakes (see `test-support/background-harness.js`). It runs whole analyses and checks the sentiment sample and size, streaming, the Gemini request format, retries and error handling, model choice, saved results, settings storage and cancellation when the panel closes.
+- `content.test.js` runs the real content script on a small fake topic page and checks that the main comments are sent before reply threads are fetched.
+- `background.test.js` loads the real service worker with Chrome APIs and Gemini replaced by fakes (see `test-support/background-harness.js`). It runs whole analyses and checks the sentiment sample and size, streaming, thinking notes, the Gemini request format, retries, the silence limit and error handling, model choice, saved results, settings storage and cancellation when the panel closes.
 - `popup-react.test.js` renders result components with the bundled React.
 - `packaging.test.js` builds the Web Store zip and checks it contains every file the extension loads and no test files.
 
@@ -344,7 +351,7 @@ When an analysis fails, the side panel shows a card in place of the status line.
 | Analysis fails at once with a connection error | Reload the topic page. This happens when the extension was installed or updated after the page was opened. |
 | "No valid comments found" or "Could not extract comments" | Make sure you are on a topic page (`/topics/<id>/`), not a search or list page, then refresh and try again. |
 | Summary ignores the linked article | Site access may have been declined (reopen the panel to be asked again), the link may redirect to a different site than the one you allowed, or the article may be blocked, paywalled or unreadable. Gemini then interprets the opening post instead. |
-| The sentiment section is slow | It asks Gemini for its deepest thinking and a long essay. The essay text appears as it is written. Large topics, or runs with replies included, take longer. |
+| The sentiment section is slow | It asks Gemini for its deepest thinking, which takes most of the time (about 25 seconds in testing) before any essay text appears; meanwhile the status line shows what Gemini is thinking about. The essay then appears as it is written. If Gemini goes silent for 30 seconds, the request moves on to the next model. Large topics take longer to read before the essay can start. |
 | Excel download fails | Check that Chrome allows downloads and that there is disk space. |
 
 ## License

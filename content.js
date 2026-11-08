@@ -363,6 +363,14 @@
         // --- Step 2: Concurrently fetch all unique reply pages in batches (CONDITIONAL) ---
         const allReplies = [];
         if (scrapeReplies && replyUrlMap.size > 0) {
+            // The sentiment essay reads main comments only: send them now so
+            // it can start while the reply pages are read.
+            chrome.runtime.sendMessage({
+                action: 'mainCommentsReady',
+                analysisId,
+                data: { success: true, data: { comments: allComments.slice() } }
+            });
+
             const urlsToFetch = Array.from(replyUrlMap.keys());
             const batchSize = 5; // Set a small batch size to avoid being blocked
 

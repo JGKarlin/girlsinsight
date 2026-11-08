@@ -309,6 +309,10 @@
     "progressSummaryAndSentiment": {
         "message": "Processing the summary and sentiment analysis..."
     },
+    "progressThinkingNote": {
+        "message": "$1 Thinking: $2",
+        "description": "$1 is the running step; $2 is the heading of Gemini's latest thinking note, in Gemini's own words."
+    },
     "geminiBusy": {
         "message": "Gemini is too busy to answer right now. When demand is high, free-tier requests are the first to be turned away. Try again in a few minutes."
     },

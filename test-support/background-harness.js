@@ -89,6 +89,31 @@ function geminiStream(pieces, finishReason = 'STOP') {
     return { ok: true, status: 200, statusText: '200', body: sseBody(chunks), text: async () => '', json: async () => chunks[0] };
 }
 
+/**
+ * A streamed reply built from raw candidate chunks, e.g.
+ * { parts: [{ text, thought: true }] } for one of Gemini's thinking notes.
+ */
+function geminiStreamChunks(chunks) {
+    const events = chunks.map(({ parts, finishReason }) => ({
+        candidates: [{ content: { parts, role: 'model' }, ...(finishReason ? { finishReason } : {}) }],
+    }));
+    return { ok: true, status: 200, statusText: '200', body: sseBody(events), text: async () => '', json: async () => events[0] };
+}
+
+/** A streamed reply that sends `pieces` and then goes quiet without finishing. */
+function stalledStream(pieces) {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+        start(controller) {
+            for (const text of pieces) {
+                const chunk = { candidates: [{ content: { parts: [{ text }], role: 'model' } }] };
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\r\n\r\n`));
+            }
+        },
+    });
+    return { ok: true, status: 200, statusText: '200', body, text: async () => '', json: async () => ({}) };
+}
+
 const DEFAULT_MODELS = [
     { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
     { name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
@@ -103,6 +128,10 @@ const DEFAULT_MODELS = [
  * @param {() => object} [options.modelsReply] replaces the whole GET /v1beta/models reply
  * @param {(request) => object} [options.gemini]
  *        returns a fetch-style response for each generate call
+ * @param {number[]} [options.heldTimerDelays] timers of these lengths are
+ *        recorded but never fire. By default that is the 30 s silence limit,
+ *        so a test can hold back a Gemini reply without it counting as
+ *        Gemini going quiet; tests of the limit itself pass [].
  */
 async function loadBackground({
     sync = {},
@@ -111,6 +140,7 @@ async function loadBackground({
     models = DEFAULT_MODELS,
     modelsReply = null,
     gemini = () => geminiText('ok'),
+    heldTimerDelays = [30_000],
 } = {}) {
     const runtimeMessages = [];
     const geminiRequests = [];
@@ -118,6 +148,7 @@ async function loadBackground({
     const timerDelays = [];
     const fastTimeout = (callback, ms, ...args) => {
         timerDelays.push(ms);
+        if (heldTimerDelays.includes(ms)) return { held: ms };
         return setTimeout(callback, 0, ...args);
     };
 
@@ -223,8 +254,11 @@ async function loadBackground({
  * Runs startFullAnalysis end to end, with chrome.tabs.sendMessage standing in
  * for the content script: it answers startPhasedExtraction by delivering the
  * opening post and then the given comments through the real message handler.
+ * With `mainComments`, the main comments are delivered first (as the page
+ * reader does when reply pages still have to be fetched), and the full list
+ * follows once `allCommentsGate` resolves.
  */
-async function runFullAnalysis(harness, { comments, settings, analysisId = 'test-run' }) {
+async function runFullAnalysis(harness, { comments, settings, analysisId = 'test-run', mainComments = null, allCommentsGate = null }) {
     const { background, chrome } = harness;
     const tabId = 7;
     chrome.tabs.sendMessage = async (targetTab, message) => {
@@ -243,11 +277,18 @@ async function runFullAnalysis(harness, { comments, settings, analysisId = 'test
                     },
                 },
             }, sender, () => {});
-            background.handleMessage({
+            if (mainComments) {
+                background.handleMessage({
+                    action: 'mainCommentsReady',
+                    analysisId: message.analysisId,
+                    data: { success: true, data: { comments: mainComments } },
+                }, sender, () => {});
+            }
+            Promise.resolve(allCommentsGate).then(() => background.handleMessage({
                 action: 'allCommentsReady',
                 analysisId: message.analysisId,
                 data: { success: true, data: { comments, activityStats: { score: 1 } } },
-            }, sender, () => {});
+            }, sender, () => {}));
         }, 0);
         return { success: true };
     };
@@ -291,9 +332,11 @@ module.exports = {
     chromeEvent,
     comment,
     geminiStream,
+    geminiStreamChunks,
     geminiText,
     jsonResponse,
     loadBackground,
     runFullAnalysis,
     sentimentSample,
+    stalledStream,
 };
