@@ -41,7 +41,7 @@ Your Gemini API key is used only to authenticate your requests to Google's Gemin
 
 ## Who receives data
 
-**Google (Gemini API).** When you run an analysis, the extension sends the following to Google's Gemini API together with your API key: the topic title, the opening post, up to 15,000 characters of the linked article's text, and a sample of comments with their vote counts. Google's terms and privacy policy for the Gemini API govern how Google handles this data, which can depend on the kind of account your API key belongs to.
+**Google (Gemini API).** When you run an analysis, the extension sends the following to Google's Gemini API together with your API key: the topic title, the opening post, up to 15,000 characters of the linked article's text, and a sample of comments with their vote counts. Requests are sent with Gemini's `store` option turned off, so Google does not save them in the request logs of your Google AI Studio project. Google's terms and privacy policy for the Gemini API govern how Google otherwise handles this data, which can depend on the kind of account your API key belongs to.
 
 **Internet Archive.** A linked article may appear to have been deleted, meaning its website reports "not found" and no article can be read. In that case the extension sends the article's address to the Internet Archive's Wayback Machine (web.archive.org and archive.org) to look for an archived copy, and may open that copy in the inactive tab. Only the article's address is sent. No comments, settings or API key are sent to the Internet Archive.
 

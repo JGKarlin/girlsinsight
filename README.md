@@ -114,7 +114,7 @@ sequenceDiagram
     par Summary
         B->>T: Render linked article
         T-->>B: Article text
-        B->>G: Summary request (gemini-2.5-flash)
+        B->>G: Summary request (gemini-3.8-flash, low thinking)
         G-->>B: Summary
         B-->>P: Summary appears
     and Comment extraction
@@ -122,7 +122,7 @@ sequenceDiagram
         C-->>B: All comments and activity
     end
     B-->>P: Statistics and top/bottom comments appear
-    B->>G: Sentiment request (gemini-2.5-pro)
+    B->>G: Sentiment request (gemini-3.8-flash, high thinking)
     G-->>B: Essay and score
     B-->>P: Sentiment appears, then analysisComplete
 ```
@@ -168,10 +168,14 @@ All requests go directly from your browser to `https://generativelanguage.google
 | Purpose | Model | Settings |
 |---|---|---|
 | API key check | | `GET /models` |
-| Summary | `gemini-2.5-flash` | up to 2,048 output tokens, temperature 0.7 |
-| Sentiment essay | `gemini-2.5-pro` | up to 64,000 output tokens, temperature 0.5 |
+| Summary | `gemini-3.8-flash` | thinking level `LOW`, up to 8,192 output tokens |
+| Sentiment essay | `gemini-3.8-flash` | thinking level `HIGH`, up to 64,000 output tokens |
 
-Each request is tried up to three times, waiting 1 second and then 2 seconds between attempts. An invalid API key is reported at once, without retrying. Gemini's safety filters are set to `BLOCK_NONE`, and each prompt states that the task is research. Forum comments often discuss sensitive subjects, and the filters would otherwise refuse many ordinary threads.
+`gemini-3.8-flash` is Google's recommended replacement for `gemini-2.5-pro`. It has a free tier, and its 65,536-token output limit (thinking included) fits the long essay. The summary uses low thinking so it appears quickly. The essay is the main result, so it uses the deepest thinking.
+
+Each request is tried up to three times, waiting 1 second and then 2 seconds between attempts. An invalid API key is reported at once, without retrying.
+
+Requests follow the current API format. Sampling parameters such as `temperature` are not sent, because current models ignore them. Safety settings are left at Gemini's defaults, under which the adjustable filters are off for current models. Each prompt states that the task is research, because forum comments often discuss sensitive subjects. Every request is sent with `store: false`, so Google does not save it in your AI Studio project's request logs. New paid-tier projects turn those logs on by default.
 
 ### Message flow
 
@@ -273,7 +277,7 @@ With auto calculation off, *n* is the **Comments to analyze** setting. Either wa
 
 GirlsinSight has no server of its own and collects no analytics. When you run an analysis:
 
-- the topic title, opening post, article excerpt and sampled comments are sent to Google's Gemini API using your key;
+- the topic title, opening post, article excerpt and sampled comments are sent to Google's Gemini API using your key, with request logging turned off (`store: false`);
 - if an article link is dead, its URL is looked up on the Internet Archive's Wayback Machine;
 - articles are opened in an inactive tab that is closed afterwards, and the article's site sees an ordinary visit from your browser;
 - your API key and settings are kept in Chrome sync storage.
@@ -313,7 +317,7 @@ node --test
 | Analysis fails at once with a connection error | Reload the topic page. This happens when the extension was installed or updated after the page was opened. |
 | "No valid comments found" or "Could not extract comments" | Make sure you are on a topic page (`/topics/<id>/`), not a search or list page, then refresh and try again. |
 | Summary ignores the linked article | Site access may have been declined, or the article may be blocked, paywalled or unreadable. Gemini then interprets the opening post instead. |
-| The sentiment section is slow | It uses `gemini-2.5-pro` and a long essay. Large topics, or runs with replies included, take longer. |
+| The sentiment section is slow | It asks Gemini for its deepest thinking and a long essay. Large topics, or runs with replies included, take longer. |
 | Excel download fails | Check that Chrome allows downloads and that there is disk space. |
 
 ## License
