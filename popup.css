@@ -389,6 +389,39 @@ body {
     /* Styles moved to .result-box */
 }
 
+/* Gemini's Markdown in the summary and the essay. Paragraph spacing matches
+   the blank line between paragraphs that the text showed before. */
+.md-paragraph {
+    margin: 0 0 1em;
+}
+
+.md-heading {
+    margin: 0 0 0.4em;
+    font-weight: 600;
+}
+
+.md-list {
+    margin: 0 0 1em;
+    padding-left: 1.4em;
+}
+
+.md-list li {
+    margin: 0.2em 0;
+}
+
+.md-paragraph:last-child,
+.md-list:last-child {
+    margin-bottom: 0;
+}
+
+.result-box code {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.92em;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0 0.25em;
+    border-radius: 3px;
+}
+
 .source-info {
     font-size: 12px;
     color: #7f8c8d;

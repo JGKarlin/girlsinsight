@@ -1,6 +1,98 @@
 // React components for progressive results rendering
 const { useState, useEffect, useRef } = React;
 
+// Gemini writes Markdown. The summary and the essay show its common marks as
+// formatting: **bold**, *italic* (also __bold__ and _italic_), `code`,
+// # headings, "-"/"*" bullet lists and "1." numbered lists. Everything is
+// built as React elements, never as HTML, so a reply cannot inject markup.
+// An asterisk or underscore inside a word or between spaces ("3 * 4",
+// snake_case) is not Markdown and stays as written.
+const MARKDOWN_INLINE = /\*\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*\*|\*\*(?=\S)([^\n]+?)(?<=\S)\*\*|__(?=\S)([^\n]+?)(?<=\S)__|(?<![*\w])\*(?=[^\s*])([^*\n]+?)(?<=[^\s*])\*(?![*\w])|(?<!\w)_(?=[^\s_])([^_\n]+?)(?<=[^\s_])_(?!\w)|`([^`\n]+)`/;
+
+function renderMarkdownInline(text, key) {
+    const parts = [];
+    let rest = String(text);
+    for (let index = 0; rest; index++) {
+        const match = rest.match(MARKDOWN_INLINE);
+        if (!match) {
+            parts.push(rest);
+            break;
+        }
+        if (match.index > 0) parts.push(rest.slice(0, match.index));
+        const [whole, boldItalic, bold, boldUnderscore, italic, italicUnderscore, code] = match;
+        const partKey = `${key}.${index}`;
+        if (boldItalic !== undefined) {
+            parts.push(React.createElement('strong', { key: partKey },
+                React.createElement('em', null, renderMarkdownInline(boldItalic, partKey))));
+        } else if (bold !== undefined || boldUnderscore !== undefined) {
+            parts.push(React.createElement('strong', { key: partKey }, renderMarkdownInline(bold ?? boldUnderscore, partKey)));
+        } else if (italic !== undefined || italicUnderscore !== undefined) {
+            parts.push(React.createElement('em', { key: partKey }, renderMarkdownInline(italic ?? italicUnderscore, partKey)));
+        } else {
+            parts.push(React.createElement('code', { key: partKey }, code));
+        }
+        rest = rest.slice(match.index + whole.length);
+    }
+    return parts;
+}
+
+function renderMarkdown(text) {
+    const blocks = [];
+    let paragraph = [];
+    let list = null;
+    const endParagraph = () => {
+        if (paragraph.length) blocks.push({ type: 'p', lines: paragraph });
+        paragraph = [];
+    };
+    const endList = () => {
+        if (list) blocks.push(list);
+        list = null;
+    };
+    for (const line of String(text || '').replace(/\r/g, '').split('\n')) {
+        const heading = line.match(/^\s*#{1,6}\s+(.*)$/);
+        const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+        const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+        if (!line.trim()) {
+            endParagraph();
+            endList();
+        } else if (heading) {
+            endParagraph();
+            endList();
+            blocks.push({ type: 'heading', text: heading[1] });
+        } else if (bullet || numbered) {
+            endParagraph();
+            const type = bullet ? 'ul' : 'ol';
+            if (!list || list.type !== type) {
+                endList();
+                list = { type, start: numbered ? Number(numbered[1]) : undefined, items: [] };
+            }
+            list.items.push(bullet ? bullet[1] : numbered[2]);
+        } else {
+            endList();
+            paragraph.push(line);
+        }
+    }
+    endParagraph();
+    endList();
+
+    return blocks.map((block, index) => {
+        const key = `md${index}`;
+        if (block.type === 'heading') {
+            return React.createElement('p', { key, className: 'md-heading' }, renderMarkdownInline(block.text, key));
+        }
+        if (block.type === 'ul' || block.type === 'ol') {
+            return React.createElement(block.type, { key, className: 'md-list', start: block.start },
+                block.items.map((item, itemIndex) => React.createElement('li', { key: itemIndex },
+                    renderMarkdownInline(item, `${key}.${itemIndex}`))));
+        }
+        return React.createElement('p', { key, className: 'md-paragraph' },
+            block.lines.flatMap((line, lineIndex) => [
+                ...(lineIndex ? [React.createElement('br', { key: `br${lineIndex}` })] : []),
+                ...renderMarkdownInline(line, `${key}.${lineIndex}`),
+            ]));
+    });
+}
+
 // Main Results Component
 const AnalysisResults = ({ i18n }) => {
     const [results, setResults] = useState({
@@ -176,10 +268,7 @@ const SummarySection = ({ summary, source, sourceDetails, loading, i18n }) => {
 
     return React.createElement('div', { className: 'summary-section' },
         React.createElement('h3', { className: 'section-title' }, i18n('summaryTitle')),
-        React.createElement('div', { 
-            className: 'summary-content result-box',
-            style: { whiteSpace: 'pre-wrap' }
-        }, summary || ''),
+        React.createElement('div', { className: 'summary-content result-box' }, renderMarkdown(summary)),
         source && React.createElement('div', { className: 'source-info', style: { display: 'block' } },
             sourceHref ?
                 React.createElement('span', null, 
@@ -236,15 +325,13 @@ const SentimentSection = ({ sentiment, draft, loading, i18n }) => {
             className: isLoading && !showDraft ? 'sentiment-details result-box loading-skeleton' : 'sentiment-details result-box'
         },
             showDraft ?
-                React.createElement('div', { style: { whiteSpace: 'pre-wrap' } }, draft) :
+                React.createElement('div', null, renderMarkdown(draft)) :
             isLoading ? [
                 React.createElement('div', { key: 1, className: 'skeleton-line', style: { width: '95%' } }),
                 React.createElement('div', { key: 2, className: 'skeleton-line', style: { width: '88%' } }),
                 React.createElement('div', { key: 3, className: 'skeleton-line', style: { width: '92%' } })
-            ] : sentiment?.details ? 
-                React.createElement('div', {
-                    style: { whiteSpace: 'pre-wrap' }
-                }, sentiment.details) : ''
+            ] : sentiment?.details ?
+                React.createElement('div', null, renderMarkdown(sentiment.details)) : ''
         )
     );
 };

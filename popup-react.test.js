@@ -16,6 +16,7 @@ function loadComponents() {
     return {
         CommentItem: vm.runInContext('CommentItem', context),
         SentimentSection: vm.runInContext('SentimentSection', context),
+        SummarySection: vm.runInContext('SummarySection', context),
     };
 }
 
@@ -35,7 +36,7 @@ function textOf(node) {
     return node && node.props ? textOf(node.props.children) : '';
 }
 
-const { CommentItem, SentimentSection } = loadComponents();
+const { CommentItem, SentimentSection, SummarySection } = loadComponents();
 const render = (text, extra = {}) => CommentItem({
     comment: { text, plus: 3, minus: 1, date: '2026-11-01T00:00:00.000Z', number: 2, ...extra },
 });
@@ -94,4 +95,48 @@ test('the essay draft is shown while the sentiment analysis is still running', (
     assert.match(textOf(byClass(tree, 'sentiment-details')), /The community is lar/);
     assert.equal(byClass(tree, 'skeleton-line').length, 0);
     assert.equal(textOf(byClass(tree, 'score-value')), '?');
+});
+
+// ---------------------------------------------------------------- Gemini's Markdown
+
+const ofType = (tree, type) => findAll(tree, node => node.type === type);
+const summaryTree = summary => SummarySection({ summary, source: null, sourceDetails: null, loading: false, i18n });
+const essayTree = details => SentimentSection({ sentiment: { label: 'positive', score: 7, details }, loading: false, i18n });
+
+test('the summary shows Markdown italics and bold as real italics and bold', () => {
+    const tree = summaryTree('He starred in the drama *Docchi ga Docchi!* and the **NHK Taiga** drama _Toshiie to Matsu_.');
+
+    assert.deepEqual(ofType(tree, 'em').map(textOf), ['Docchi ga Docchi!', 'Toshiie to Matsu']);
+    assert.deepEqual(ofType(tree, 'strong').map(textOf), ['NHK Taiga']);
+    assert.ok(!textOf(tree).includes('*'), textOf(tree));
+});
+
+test('headings, bullet lists and numbered lists in the essay are shown as such', () => {
+    const tree = essayTree(['## Main themes', '- Support for the couple', '- Surprise at the news', '',
+        '1. First reason', '2. Second reason', '', 'A closing paragraph with *emphasis*.'].join('\n'));
+
+    assert.deepEqual(byClass(tree, 'md-heading').map(textOf), ['Main themes']);
+    assert.deepEqual(ofType(tree, 'ul').flatMap(list => ofType(list, 'li')).map(textOf), ['Support for the couple', 'Surprise at the news']);
+    assert.deepEqual(ofType(tree, 'ol').flatMap(list => ofType(list, 'li')).map(textOf), ['First reason', 'Second reason']);
+    assert.deepEqual(ofType(tree, 'em').map(textOf), ['emphasis']);
+});
+
+test('the essay streamed so far shows its formatting too', () => {
+    const tree = SentimentSection({ sentiment: null, draft: 'An *early* draft', loading: true, i18n });
+    assert.deepEqual(ofType(tree, 'em').map(textOf), ['early']);
+});
+
+test('HTML in a reply is shown as text, never as markup', () => {
+    const tree = summaryTree('<img src=x onerror=alert(1)> and *safe*');
+
+    assert.equal(ofType(tree, 'img').length, 0);
+    assert.ok(textOf(tree).includes('<img src=x onerror=alert(1)>'));
+});
+
+test('asterisks and underscores that are not Markdown stay as written', () => {
+    const text = '3 * 4 = 12, snake_case_name and 5*6';
+    const tree = summaryTree(text);
+
+    assert.equal(ofType(tree, 'em').length, 0);
+    assert.equal(textOf(byClass(tree, 'summary-content')), text);
 });
