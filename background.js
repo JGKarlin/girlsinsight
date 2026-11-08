@@ -55,6 +55,8 @@ const MAX_RETRY_WAIT_MS = 30_000;
 // count), or if, once it has started, Gemini goes quiet for SILENCE_LIMIT_MS.
 const FIRST_WORDS_LIMIT_MS = 90_000;
 const SILENCE_LIMIT_MS = 30_000;
+// Reasons a reply can end because Google's content filter stopped it.
+const CONTENT_FILTER_STOPS = ['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII'];
 // How often streamed essay text is forwarded to the side panel.
 const DRAFT_INTERVAL_MS = 300;
 // Comments sent for sentiment analysis in manual mode, until the user picks a number.
@@ -1220,7 +1222,7 @@ ${topComment.slice(0, 1000)}`;
             // The sentiment request would fail the same way, so end the run here.
             if (RUN_ENDING_ERROR_CODES.includes(error.code)) throw error;
             console.error('Error generating summary:', error);
-            return i18n.getMessage('summaryGenerationFailed') || `Summary could not be generated: ${error.message}`;
+            return i18n.getMessage('summaryGenerationFailed', [error.message]);
         }
     }
     
@@ -1328,7 +1330,7 @@ Score: <0-10>`;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('Error analyzing sentiment:', error);
-            const knownMessages = ['apiKeyInvalid', 'rateLimited', 'prepaidCreditsDepleted', 'geminiBusy'].map(key => i18n.getMessage(key));
+            const knownMessages = ['apiKeyInvalid', 'rateLimited', 'prepaidCreditsDepleted', 'geminiBusy', 'contentBlocked'].map(key => i18n.getMessage(key));
             const details = error.code === 'MAX_TOKENS'
                 ? i18n.getMessage('sentimentIncomplete')
                 : knownMessages.includes(error.message)
@@ -1699,7 +1701,7 @@ Score: <0-10>`;
                 // A model that is busy, out of today's free requests or unable to
                 // take this request is remembered and skipped for a while, and
                 // the request moves straight on to the next model on its list.
-                if (error.moveOn) await this.coolDownModel(model, error.cooldownUntil);
+                if (error.moveOn && error.cooldownUntil) await this.coolDownModel(model, error.cooldownUntil);
                 if (attempt === maxAttempts) throw error;
                 const next = error.moveOn ? order[modelIndex + 1] : undefined;
                 if (next) {
@@ -1909,8 +1911,14 @@ Score: <0-10>`;
     // could help. A reply cut off at the token limit is never returned as if
     // it were complete.
     finishGeminiReply(reply) {
-        if (reply.blockReason) {
-            throw this.geminiError(`API call blocked due to ${reply.blockReason}.`);
+        // Google's content filter refused the prompt or stopped the reply.
+        // PROHIBITED_CONTENT cannot be turned off and sometimes misfires on
+        // news about sex or violence. Another model may judge it differently,
+        // so the request moves on, but the model is not skipped later: the
+        // refusal is about this text, not the model.
+        if (reply.blockReason || CONTENT_FILTER_STOPS.includes(reply.finishReason)) {
+            console.warn('Gemini content filter:', reply.blockReason || reply.finishReason);
+            throw this.geminiError(i18n.getMessage('contentBlocked'), { code: 'CONTENT_BLOCKED', moveOn: true });
         }
         if (reply.finishReason === 'MAX_TOKENS') {
             throw this.geminiError('Response was cut off at the output token limit.', { code: 'MAX_TOKENS' });

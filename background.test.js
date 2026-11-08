@@ -1156,3 +1156,50 @@ test('with replies on, the essay starts from the main comments while reply pages
     assert.deepEqual([...sample.bottom].sort(), ['HATED-1', 'HATED-2', 'HATED-3', 'HATED-4', 'HATED-5']);
     assert.equal(outcome.stats.totalCommentsAndReplies, main.length + replies.length, 'the stats still count the replies');
 });
+
+// ---------------------------------------------------------------- Google's content filter
+
+// Google's non-adjustable filter can refuse the prompt itself, or stop the reply.
+const promptRefused = () => jsonResponse(200, { promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } });
+const replyStopped = () => geminiText('', 'PROHIBITED_CONTENT');
+
+for (const [name, refusal] of [['refuses the prompt', promptRefused], ['stops the reply', replyStopped]]) {
+    test(`when Google's content filter ${name}, the essay moves on to the other model`, async () => {
+        const harness = await loadBackground({
+            sync: { language: 'en' },
+            gemini: request => (isSentimentRequest(request) && request.model === 'gemini-3.6-flash'
+                ? refusal()
+                : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
+        });
+        const { result, sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+        assert.equal(result.success, true);
+        assert.equal(sentiment.score, 7);
+        assert.deepEqual(harness.geminiRequests.filter(isSentimentRequest).map(r => r.model), ['gemini-3.6-flash', 'gemini-3.5-flash-lite']);
+        const cooldowns = harness.chrome.storage.local.data.modelCooldowns || {};
+        assert.equal(cooldowns['gemini-3.6-flash'], undefined, 'a refusal is about this topic, not the model, so the model is not skipped later');
+    });
+}
+
+test("when every model's content filter refuses the topic, the essay says so in plain words", async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (isSentimentRequest(request) ? promptRefused() : geminiText('A summary.')),
+    });
+    const { sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.equal(sentiment.score, null);
+    assert.equal(sentiment.details, en.contentBlocked.message);
+    assert.equal(harness.geminiRequests.filter(isSentimentRequest).length, 2, 'each model is asked once, not retried');
+});
+
+test('when the summary cannot be written, the panel says why', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (isSentimentRequest(request) ? geminiText('An essay.\nSentiment: Positive\nScore: 7') : promptRefused()),
+    });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    const summary = harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary');
+    assert.equal(summary.data.summary, en.summaryGenerationFailed.message.replace('$1', en.contentBlocked.message));
+});

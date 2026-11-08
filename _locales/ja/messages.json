@@ -168,7 +168,7 @@
     "apiKeyValid": { "message": "APIキーは有効です！" },
     "apiKeyInvalid": { "message": "APIキーが無効か、ネットワークエラーが発生しました" },
     "progressValidatingApiKey": { "message": "APIキーを検証中..." },
-    "summaryGenerationFailed": { "message": "要約を生成できませんでした" },
+    "summaryGenerationFailed": { "message": "要約を生成できませんでした: $1" },
     "testFailed": { "message": "テストに失敗しました" },
     "settingsSaved": { "message": "設定が保存されました" },
     "saveFailed": { "message": "設定の保存に失敗しました" },
@@ -312,6 +312,9 @@
     },
     "progressSummaryAndSentiment": {
         "message": "AIで概要と感情分析を処理中..."
+    },
+    "contentBlocked": {
+        "message": "Googleのコンテンツフィルタがこのトピックを拒否しました。このフィルタはオフにできず、性や暴力に関するニュースをブロックすることがあります。"
     },
     "progressThinkingNote": {
         "message": "$1 思考中: $2",

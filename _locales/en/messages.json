@@ -163,7 +163,7 @@
     "apiKeyValid": { "message": "API Key is valid!" },
     "apiKeyInvalid": { "message": "API key is invalid or network error" },
     "progressValidatingApiKey": { "message": "Validating API key..." },
-    "summaryGenerationFailed": { "message": "Summary could not be generated" },
+    "summaryGenerationFailed": { "message": "Summary could not be generated: $1" },
     "testFailed": { "message": "Test failed" },
     "settingsSaved": { "message": "Settings saved!" },
     "saveFailed": { "message": "Failed to save settings" },
@@ -308,6 +308,9 @@
     },
     "progressSummaryAndSentiment": {
         "message": "Processing the summary and sentiment analysis..."
+    },
+    "contentBlocked": {
+        "message": "Google's content filter refused this topic. This filter can't be turned off, and it sometimes blocks news about sex or violence."
     },
     "progressThinkingNote": {
         "message": "$1 Thinking: $2",
