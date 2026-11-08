@@ -28,7 +28,7 @@ GirlsinSight runs in Chrome's side panel next to the topic you are reading. Each
 |---|---|
 | **Summary** | A summary of the news article linked in the topic's opening post, with a link to the source (or to an archived copy if the original is gone). If no article can be read, Gemini instead interprets the topic title and opening post. |
 | **Statistics** | Comment counts, a consensus score, a controversy score, an activity score and how long the topic has been running. |
-| **Top and bottom comments** | The most upvoted and most downvoted comments, with vote counts and dates. Long comments are shortened to 200 characters, and image-only comments appear as the image's link. |
+| **Top and bottom comments** | The most upvoted and most downvoted comments, with vote counts and dates. Long comments are shortened to 200 characters, and image-only comments are shown as images. |
 | **Sentiment analysis** | A roughly 500-word essay on community sentiment and its sociocultural context, plus an overall label (positive, neutral, negative) and a score from 0 to 10. |
 
 When the analysis finishes, you can download everything as a formatted Excel workbook. Both the interface and Gemini's output can be in Japanese (the default) or English.
@@ -171,7 +171,7 @@ All requests go directly from your browser to `https://generativelanguage.google
 | Summary | `gemini-2.5-flash` | up to 2,048 output tokens, temperature 0.7 |
 | Sentiment essay | `gemini-2.5-pro` | up to 64,000 output tokens, temperature 0.5 |
 
-Failed requests are retried up to three times, waiting 1 second and then 2 seconds. Gemini's safety filters are set to `BLOCK_NONE`, and each prompt states that the task is research. Forum comments often discuss sensitive subjects, and the filters would otherwise refuse many ordinary threads.
+Each request is tried up to three times, waiting 1 second and then 2 seconds between attempts. An invalid API key is reported at once, without retrying. Gemini's safety filters are set to `BLOCK_NONE`, and each prompt states that the task is research. Forum comments often discuss sensitive subjects, and the filters would otherwise refuse many ordinary threads.
 
 ### Message flow
 
@@ -246,7 +246,7 @@ n = round((0.03 × total + 20) × 2), limited to between 10 and 1,000
 | 1,000 | 100 |
 | 10,000 | 640 |
 
-With auto calculation off, *n* is the **Comments to analyze** setting. Either way, a topic with fewer than 100 comments is analyzed in full when *n* exceeds its size. The sample is split with the extra comment going to the upvoted side: `ceil(n/2)` from the top and `floor(n/2)` from the bottom.
+With auto calculation off, *n* is the **Comments to analyze** setting. Either way, *n* never exceeds the number of main comments, so a small topic is analyzed in full and no comment is sent twice. Replies do not affect *n*. The sample is split with the extra comment going to the upvoted side: `ceil(n/2)` from the top and `floor(n/2)` from the bottom.
 
 ## Excel export
 
@@ -284,11 +284,15 @@ The extension only works on GirlsChannel pages you choose to analyze. See the fu
 
 There is no build step and no npm dependency. Edit the files, then click the reload icon for GirlsinSight on `chrome://extensions/`.
 
-**Tests.** The article-retrieval modules have unit tests that use Node's built-in test runner (Node 18 or newer):
+**Tests.** The suite uses Node's built-in test runner (Node 18 or newer) and needs no packages:
 
 ```sh
 node --test
 ```
+
+- `article-pipeline.test.js` and `rendered-article-session.test.js` cover article retrieval.
+- `background.test.js` loads the real service worker with Chrome APIs and Gemini replaced by fakes (see `test-support/background-harness.js`). It runs whole analyses and checks the sentiment sample, sample size, settings handling across updates and Gemini error handling.
+- `popup-react.test.js` renders the comment list with the bundled React.
 
 **Debugging.**
 
