@@ -17,7 +17,8 @@ zip -rq "$out" \
     background.js content.js girlschannel-parsing.js \
     article-pipeline.js rendered-article-session.js \
     popup.html popup.js popup-react.js popup.css \
-    _locales icons lib \
+    icons/icon16.png icons/icon48.png icons/icon128.png \
+    _locales lib \
     -x '*.DS_Store'
 if [ -f LICENSE ]; then zip -q "$out" LICENSE; fi
 
