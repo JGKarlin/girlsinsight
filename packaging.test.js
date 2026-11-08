@@ -28,6 +28,18 @@ function filesTheExtensionLoads() {
     return [...files];
 }
 
+test('the manifest targets only the live GirlsChannel host', () => {
+    const { GIRLSCHANNEL_HOME_URL } = require('./girlschannel-parsing.js');
+    const liveHost = new URL(GIRLSCHANNEL_HOME_URL).hostname;
+    const patterns = [
+        ...manifest.host_permissions,
+        ...manifest.content_scripts.flatMap(script => script.matches),
+    ].filter(pattern => pattern.includes('girlschannel'));
+    const hosts = [...new Set(patterns.map(pattern => new URL(pattern.replace('/*', '/')).hostname))];
+
+    assert.deepEqual(hosts, [liveHost]);
+});
+
 test('the Web Store package contains every file the extension loads and no tests', () => {
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'girlsinsight-package-'));
     execFileSync('sh', [path.join(__dirname, 'scripts', 'package.sh')], { env: { ...process.env, OUT_DIR: outDir } });
