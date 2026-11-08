@@ -21,6 +21,7 @@ function makeChrome({
     denyScripting = false,
     statusCode = 200,
     extractionStatus = 'success',
+    readyState = 'complete',
 } = {}) {
     const onUpdated = chromeEvent();
     const onRemoved = chromeEvent();
@@ -77,7 +78,7 @@ function makeChrome({
                     } }];
                 }
                 calls.stability += 1;
-                return [{ result: { readyState: 'complete', textLength: 1_000 } }];
+                return [{ result: { readyState, textLength: 1_000 } }];
             },
         },
         webRequest: {
@@ -337,4 +338,22 @@ test('a Readability result that holds the story is kept, even when the page elem
 
     assert.equal(page.extractionMethod, 'readability');
     assert.ok(!page.text.includes('求人ボックス'));
+});
+
+test('a slow page whose text has stopped changing is read without waiting out the settle limit', async () => {
+    // After the load time limit the page is still "interactive" (ads loading),
+    // but the article text is there and no longer changing.
+    const fake = makeChrome({ completeNavigation: false, readyState: 'interactive' });
+    const session = await RenderedArticleSession.open({
+        chromeApi: fake.chromeApi,
+        statusProbe: fake.statusProbe,
+        loadTimeoutMs: 20,
+        stabilityTimeoutMs: 5_000,
+    });
+
+    const result = await session.load('https://www.oricon.co.jp/news/2491485/full/');
+    await session.close();
+
+    assert.equal(result.status, 'success');
+    assert.ok(fake.calls.stability <= 5, `checked ${fake.calls.stability} times instead of settling`);
 });

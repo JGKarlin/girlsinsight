@@ -425,7 +425,9 @@
                     }),
                 }), signal);
                 const sample = results && results[0] && results[0].result;
-                if (sample && sample.readyState === 'complete' && sample.textLength === previousLength) {
+                // "interactive" counts too: a slow page that never finished
+                // loading every ad is read once its text stops changing.
+                if (sample && sample.readyState !== 'loading' && sample.textLength === previousLength) {
                     stableSamples += 1;
                     if (stableSamples >= 2 && Date.now() - startedAt >= minimumQuietWindowMs) return;
                 } else {

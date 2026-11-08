@@ -602,106 +602,97 @@ class GirlsinSightBackground {
 
             this.currentAnalysisData = { ...this.currentAnalysisData, ...topicData };
             
+            // The summary (article reading, then Gemini) and the essay (all
+            // comments, then Gemini) need different inputs, so they run side by
+            // side. There is one status line: it shows the step still running,
+            // the essay first since it takes longest.
+            const running = { summary: true, sentiment: false };
+            const showRunningStep = () => {
+                if (running.sentiment) {
+                    this.sendProgress(i18n.getMessage('progressSendingSentimentRequest'), analysisId);
+                } else if (running.summary) {
+                    this.sendProgress(i18n.getMessage('progressSendingSummaryRequest'), analysisId);
+                }
+            };
+            // The summary's own steps only show while the essay has not started.
+            const summaryProgress = message => {
+                if (!running.sentiment) this.sendProgress(message, analysisId);
+            };
+
             const summaryPromise = (async () => {
                 let summary;
                 let articleInfo = { text: null, source: null };
                 const firstComment = firstPageComments[0];
-                
+
                 if (firstComment && firstComment.urls && firstComment.urls.length > 0 && articleAccessGranted) {
-                    this.sendProgress(i18n.getMessage('progressCheckingArticle'), analysisId);
-                    // Pass just an array with the first comment for article fetching
-                    articleInfo = await this.fetchArticleFromComment([firstComment], { signal, analysisId });
-                    
-                    this.sendProgress(i18n.getMessage('progressSendingSummaryRequest'), analysisId);
+                    summaryProgress(i18n.getMessage('progressCheckingArticle'));
+                    articleInfo = await this.fetchArticleFromComment([firstComment], { signal, analysisId, progress: summaryProgress });
+                    summaryProgress(i18n.getMessage('progressSendingSummaryRequest'));
                     summary = await this.generateSummary(topicData, [firstComment], articleInfo.text, { signal });
-                    this.sendProgress(i18n.getMessage('progressSummaryReceived'), analysisId);
                 } else {
-                    this.sendProgress(i18n.getMessage('progressSendingSummaryRequest'), analysisId);
-                    // Use the first comment or empty array if no first comment
+                    summaryProgress(i18n.getMessage('progressSendingSummaryRequest'));
                     summary = await this.generateSummary(topicData, firstComment ? [firstComment] : [], null, { signal });
-                    this.sendProgress(i18n.getMessage('progressSummaryReceived'), analysisId);
                 }
 
                 this.throwIfAborted(signal);
+                running.summary = false;
                 this.currentAnalysisData.summary = summary;
                 this.currentAnalysisData.source = articleInfo.source;
                 this.currentAnalysisData.sourceDetails = articleInfo.sourceDetails;
-                this.sendPartialResults('summary', { 
-                    summary: summary, 
+                this.sendPartialResults('summary', {
+                    summary: summary,
                     source: articleInfo.source,
                     sourceDetails: articleInfo.sourceDetails
                 }, analysisId);
-                
-                return { summary, articleInfo };
+                if (running.sentiment) showRunningStep();
+                else this.sendProgress(i18n.getMessage('progressSummaryReceived'), analysisId);
             })();
 
-            // --- Phase 2: Wait for all comments and summary to finish before proceeding ---
-            const [allCommentsResponse] = await Promise.all([
-                this.awaitWithSignal(allCommentsPromise, signal),
-                summaryPromise,
-            ]);
+            const sentimentPhase = (async () => {
+                const allCommentsResponse = await this.awaitWithSignal(allCommentsPromise, signal);
+                if (!allCommentsResponse || !allCommentsResponse.success) {
+                    throw new Error('Failed to extract all comments.');
+                }
 
-            if (!allCommentsResponse || !allCommentsResponse.success) {
-                throw new Error('Failed to extract all comments.');
-            }
-            
-            // Add the requested pause after summary is received.
-            await this.delayWithSignal(1500, signal);
-            
-            // Process comments once for all analyses
-            const { comments: rawComments, activityStats } = allCommentsResponse.data;
-            
-            debugLog('startFullAnalysis - processing comments:', {
-                rawCommentsLength: rawComments.length,
-                firstRawComment: rawComments[0]
-            });
-            
-            const processedComments = this.processComments(rawComments);
-            debugLog('startFullAnalysis - after processing:', {
-                processedCommentsLength: processedComments.length,
-                firstProcessedComment: processedComments[0],
-                hasUpvoteRatio: processedComments[0] && 'upvoteRatio' in processedComments[0]
-            });
-            
-            this.currentAnalysisData.allComments = processedComments;
+                // Process comments once for all analyses
+                const { comments: rawComments, activityStats } = allCommentsResponse.data;
+                const processedComments = this.processComments(rawComments);
+                this.currentAnalysisData.allComments = processedComments;
 
-            // --- Run quick calculations first and update UI ---
-            this.sendProgress(i18n.getMessage('progressCalculatingStats'), analysisId);
-            // Size the sample from main comments only, as analyzeSentiment does.
-            const mainCommentCount = processedComments.filter(c => !c.isSubComment).length;
-            const totalToAnalyze = this.getCommentsToAnalyzeCount(mainCommentCount, settings);
-            const stats = this.calculateStatistics(processedComments, totalToAnalyze);
-            const topComments = this.getTopComments(processedComments, settings.commentsToDisplay);
-            const bottomComments = this.getBottomComments(processedComments, settings.commentsToDisplay);
+                // --- Quick calculations first, so the panel can show them ---
+                this.sendProgress(i18n.getMessage('progressCalculatingStats'), analysisId);
+                // Size the sample from main comments only, as analyzeSentiment does.
+                const mainCommentCount = processedComments.filter(c => !c.isSubComment).length;
+                const totalToAnalyze = this.getCommentsToAnalyzeCount(mainCommentCount, settings);
+                const stats = this.calculateStatistics(processedComments, totalToAnalyze);
+                const topComments = this.getTopComments(processedComments, settings.commentsToDisplay);
+                const bottomComments = this.getBottomComments(processedComments, settings.commentsToDisplay);
 
-            this.currentAnalysisData.stats = stats;
-            this.currentAnalysisData.topComments = topComments;
-            this.currentAnalysisData.bottomComments = bottomComments;
-            this.currentAnalysisData.activityStats = activityStats; // Store it
-            // Only the display settings the panel needs; never the API key.
-            const displaySettings = {
-                commentsToDisplay: settings.commentsToDisplay,
-                scrapeReplies: settings.scrapeReplies,
-            };
-            this.currentAnalysisData.settings = displaySettings;
+                this.currentAnalysisData.stats = stats;
+                this.currentAnalysisData.topComments = topComments;
+                this.currentAnalysisData.bottomComments = bottomComments;
+                this.currentAnalysisData.activityStats = activityStats;
+                // Only the display settings the panel needs; never the API key.
+                const displaySettings = {
+                    commentsToDisplay: settings.commentsToDisplay,
+                    scrapeReplies: settings.scrapeReplies,
+                };
+                this.currentAnalysisData.settings = displaySettings;
+                this.sendPartialResults('stats', { stats, topComments, bottomComments, activityStats, settings: displaySettings }, analysisId);
 
-            this.sendPartialResults('stats', { stats, topComments, bottomComments, activityStats, settings: displaySettings }, analysisId);
-            
-            // --- Now, run the long sentiment analysis ---
-            this.sendProgress(i18n.getMessage('progressWaitingForSentiment'), analysisId);
-
-            const sentimentPromise = (async () => {
-                this.sendProgress(i18n.getMessage('progressSendingSentimentRequest'), analysisId);
+                // --- The long sentiment essay ---
+                running.sentiment = true;
+                showRunningStep();
                 const sentimentResult = await this.analyzeSentiment(processedComments, topicData, { signal, analysisId });
-                this.sendProgress(i18n.getMessage('progressSentimentReceived'), analysisId);
                 this.throwIfAborted(signal);
+                running.sentiment = false;
                 this.currentAnalysisData.sentiment = sentimentResult;
                 this.sendPartialResults('sentiment', { sentiment: sentimentResult }, analysisId);
-                return sentimentResult;
+                if (running.summary) showRunningStep();
+                else this.sendProgress(i18n.getMessage('progressSentimentReceived'), analysisId);
             })();
-                
-            // Wait for remaining long-running promise
-            await sentimentPromise;
+
+            await Promise.all([summaryPromise, sentimentPhase]);
 
             this.sendProgress(i18n.getMessage('progressFinalizing'), analysisId);
             await this.saveAnalysis(this.currentAnalysisData);
@@ -944,7 +935,11 @@ class GirlsinSightBackground {
     
     // Fetch the rendered article in one reusable background tab. Archives are
     // considered only after every live candidate is confirmed dead.
-    async fetchArticleFromComment(comments, { signal, analysisId = null } = {}) {
+    async fetchArticleFromComment(comments, {
+        signal,
+        analysisId = null,
+        progress = message => this.sendProgress(message, analysisId),
+    } = {}) {
         const firstComment = comments.find(c => c.number === 1);
         if (!firstComment || !firstComment.urls || firstComment.urls.length === 0) {
             return { text: null, source: null, sourceDetails: null };
@@ -953,7 +948,7 @@ class GirlsinSightBackground {
         const candidates = collectArticleCandidates(firstComment.urls);
         if (!candidates.length) return { text: null, source: null, sourceDetails: null };
 
-        this.sendProgress(i18n.getMessage('progressCheckingArticleLink', [candidates[0]]), analysisId);
+        progress(i18n.getMessage('progressCheckingArticleLink', [candidates[0]]));
         const pipeline = new ArticlePipeline({
             openSession: ({ signal: sessionSignal }) => RenderedArticleSession.open({
                 chromeApi: chrome,
@@ -961,12 +956,12 @@ class GirlsinSightBackground {
             }),
             findArchive: async (url, { signal: archiveSignal }) => {
                 this.throwIfAborted(archiveSignal);
-                this.sendProgress(i18n.getMessage('progressArticleLinkDead'), analysisId);
-                this.sendProgress(i18n.getMessage('progressSearchingWayback'), analysisId);
+                progress(i18n.getMessage('progressArticleLinkDead'));
+                progress(i18n.getMessage('progressSearchingWayback'));
                 const archivedUrl = await this.searchWaybackMachine(url, { signal: archiveSignal });
-                this.sendProgress(i18n.getMessage(
+                progress(i18n.getMessage(
                     archivedUrl ? 'progressArchiveFound' : 'progressNoArchiveFound'
-                ), analysisId);
+                ));
                 return archivedUrl;
             },
             maxPages: 10,
@@ -985,7 +980,7 @@ class GirlsinSightBackground {
             };
         }
 
-        this.sendProgress(i18n.getMessage('progressCouldNotFetchArticle'), analysisId);
+        progress(i18n.getMessage('progressCouldNotFetchArticle'));
         return {
             text: null,
             source: null,
@@ -1105,11 +1100,12 @@ ${topicData.title}
 ${topComment.slice(0, 1000)}`;
             }
             
-            // Low thinking keeps the first visible result quick. The cap leaves
-            // room for thinking tokens on top of a sub-300-word summary.
+            // Medium thinking: the summary runs alongside the essay, so a little
+            // more depth does not hold up the run. The cap leaves room for
+            // thinking tokens on top of a sub-300-word summary.
             return await this.callGeminiAPI(prompt, {
                 maxOutputTokens: 8192,
-                thinkingLevel: 'LOW',
+                thinkingLevel: 'MEDIUM',
                 signal,
             });
             

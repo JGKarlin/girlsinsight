@@ -336,13 +336,12 @@ for (const [name, reply, messageKey, errorKind] of [
     ['depleted prepaid credits', creditsDepleted, 'prepaidCreditsDepleted', 'creditsDepleted'],
     ['a rejected API key', invalidKey, 'apiKeyInvalid', 'keyRejected'],
 ]) {
-    test(`${name} at the summary request ends the run before the sentiment request`, async () => {
+    test(`${name} at the summary request ends the run with the matching card`, async () => {
         const harness = await loadBackground({ sync: { language: 'en' }, gemini: reply });
-        const { result, sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+        const { result } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
         assert.equal(result.success, false);
-        assert.equal(harness.geminiRequests.filter(isSentimentRequest).length, 0, 'no sentiment request was sent');
-        assert.equal(sentiment, undefined);
+        assert.ok(!harness.runtimeMessages.some(message => message.action === 'analysisComplete'));
         const failure = harness.runtimeMessages.find(message => message.action === 'analysisFailed');
         assert.equal(failure && failure.error, en[messageKey].message);
         assert.equal(failure.errorKind, errorKind, 'the panel is told which error card to show');
@@ -530,6 +529,98 @@ test('the Verify button reports a key that has no usable model', async () => {
     ));
     assert.equal(response.success, false);
     assert.equal(response.error, en.modelUnavailable.message);
+});
+
+// ---------------------------------------------------------------- run speed and status
+
+// Waits (up to 2 s) until condition() holds; the tests below fail instead of hanging.
+async function until(condition) {
+    const deadline = Date.now() + 2000;
+    while (!condition()) {
+        if (Date.now() > deadline) throw new Error('timed out waiting');
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+}
+
+const progressAfter = (harness, text) => {
+    const all = harness.runtimeMessages.filter(m => m.action === 'analysisProgress').map(m => m.message);
+    return all.slice(all.indexOf(text) + 1);
+};
+
+test('the essay starts as soon as the comments are read, without waiting for the summary', async () => {
+    let summaryAnswered = false;
+    let essaySentWhileSummaryPending = false;
+    let releaseSummary = null;
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => {
+            if (isSentimentRequest(request)) {
+                essaySentWhileSummaryPending = !summaryAnswered;
+                if (releaseSummary) releaseSummary();
+                return geminiText('An essay.\nSentiment: Positive\nScore: 7');
+            }
+            // The summary (article reading plus Gemini) is still running.
+            return new Promise(resolve => { releaseSummary = () => { summaryAnswered = true; resolve(geminiText('A summary.')); }; });
+        },
+    });
+    const outcome = await Promise.race([
+        runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 }),
+        new Promise(resolve => setTimeout(() => resolve('waiting for the summary'), 2000)),
+    ]);
+
+    assert.notEqual(outcome, 'waiting for the summary', 'the essay waited for the summary');
+    assert.ok(essaySentWhileSummaryPending);
+    assert.equal(outcome.result.success, true);
+    assert.equal(harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary').data.summary, 'A summary.');
+});
+
+test('while the essay is being written the status line says so, even after the summary arrives', async () => {
+    let releaseEssay = null;
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (isSentimentRequest(request)
+            ? new Promise(resolve => { releaseEssay = () => resolve(geminiText('An essay.\nSentiment: Positive\nScore: 7')); })
+            : geminiText('A summary.')),
+    });
+    const run = runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+    await until(() => releaseEssay && harness.runtimeMessages.some(m => m.action === 'partialResults' && m.type === 'summary'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const whileWriting = progressAfter(harness, en.progressSummaryReceived.message);
+    releaseEssay();
+    await run;
+
+    assert.equal(whileWriting.at(-1), en.progressSendingSentimentRequest.message, JSON.stringify(whileWriting));
+});
+
+test('when the essay is done first, the status line says the summary is still on its way', async () => {
+    let releaseSummary = null;
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (isSentimentRequest(request)
+            ? geminiText('An essay.\nSentiment: Positive\nScore: 7')
+            : new Promise(resolve => { releaseSummary = () => resolve(geminiText('A summary.')); })),
+    });
+    const run = runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+    await until(() => harness.runtimeMessages.some(m => m.action === 'partialResults' && m.type === 'sentiment'));
+    const status = harness.runtimeMessages.filter(m => m.action === 'analysisProgress').at(-1).message;
+    releaseSummary();
+    await run;
+
+    assert.equal(status, en.progressSendingSummaryRequest.message);
+});
+
+test('the summary uses medium thinking and the essay the deepest', async () => {
+    const harness = await loadBackground({ sync: { language: 'en' } });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    const level = request => request.body.generationConfig.thinkingConfig.thinkingLevel;
+    assert.equal(level(harness.geminiRequests.find(r => !isSentimentRequest(r))), 'MEDIUM');
+    assert.equal(level(harness.geminiRequests.find(isSentimentRequest)), 'HIGH');
+});
+
+test('the page reader no longer says "Extraction complete. Analyzing..." while Gemini is still working', () => {
+    const contentScript = require('node:fs').readFileSync(require('node:path').join(__dirname, 'content.js'), 'utf8');
+    assert.ok(!contentScript.includes('progressExtractionComplete'));
 });
 
 // ---------------------------------------------------------------- error cards

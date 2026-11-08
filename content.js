@@ -288,15 +288,8 @@
             // --- Phase 3: Calculate final statistics ---
             const activityStats = calculateActivityScore(comments);
 
-            chrome.runtime.sendMessage({
-                action: 'getLocalizedString',
-                key: 'progressExtractionComplete'
-            }, (translatedString) => {
-                if (translatedString) {
-                    sendProgress(translatedString, analysisId);
-                }
-            });
-            
+            // The service worker takes over the status line from here: it shows
+            // which Gemini step is still running.
             chrome.runtime.sendMessage({
                 action: 'allCommentsReady',
                 analysisId,
