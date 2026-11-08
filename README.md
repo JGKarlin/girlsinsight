@@ -115,9 +115,9 @@ sequenceDiagram
     par Summary
         B->>T: Render linked article
         T-->>B: Article text
-        B->>G: Summary request (gemini-3.8-flash, low thinking)
-        G-->>B: Summary
-        B-->>P: Summary appears
+        B->>G: Summary request (gemini-3.8-flash, low thinking, streamed)
+        G-->>B: Summary text as it is written
+        B-->>P: Summary fills in
     and Comments, then sentiment
         C->>B: Fetch later pages and replies
         C-->>B: All comments and activity
@@ -133,7 +133,7 @@ sequenceDiagram
 2. **Start.** Clicking **Analyze Topic** asks for access to the linked article's site (see [Permissions](#permissions)), assigns the run a unique ID, opens a connection that cancels the run if the panel closes, and passes the current settings to the service worker. Only one analysis runs at a time.
 3. **Key check.** The service worker lists the Gemini models the key can use and picks one (see [Gemini API usage](#gemini-api-usage)). An invalid key, or a key with no usable model, stops the run with a clear message before any comments are read.
 4. **Opening post first.** The content script loads page 1 if you are on a later page, then sends the topic title, page-1 URL, post date and opening post right away, so the summary can start while the rest of the thread is still being read.
-5. **Summary, in parallel.** If the opening post links to an external page and site access was granted, the [article pipeline](#article-retrieval) retrieves up to 15,000 characters of article text and Gemini summarizes it in under 300 words. Otherwise Gemini interprets the title and opening post in under 200 words. Either way the summary is one continuous text, without sections, headings or labels.
+5. **Summary, in parallel.** If the opening post links to an external page and site access was granted, the [article pipeline](#article-retrieval) retrieves up to 15,000 characters of article text and Gemini summarizes it in under 300 words. Otherwise Gemini interprets the title and opening post in under 200 words. Either way the summary is one continuous text, without sections, headings or labels. It is streamed, so the panel fills it in as it is written.
 6. **Full extraction, in parallel.** The content script walks every page of the topic from page 1, fetching later pages through the service worker with a 200 ms pause between pages. For each comment it records the number, date (read as Japan time, which GirlsChannel uses), upvotes, downvotes, text and any links. An image-only comment is recorded as its image URL. If **Scrape replies** is on, reply threads are fetched five at a time with a 300 ms pause between batches. Comments are then de-duplicated, sorted by number with replies in order under their parent, and given an activity score.
 7. **Statistics.** As soon as the extraction is done, without waiting for the summary, the service worker drops empty comments, works out each comment's net score and upvote ratio, and sends the statistics and the top and bottom comment lists to the panel.
 8. **Sentiment, alongside the summary.** The essay needs only the comments, so it starts right after the statistics, while the summary may still be running. The status line shows the step still running: the sentiment request while the essay is being written, then the summary request if the summary is still on its way. The service worker chooses a sample of main comments (see [Sample size](#sample-size)): half from the top by net score and half from the bottom. Each comment is cut to 1,000 characters and labeled with its vote counts. Gemini is told to treat heavily upvoted comments as the majority view and heavily downvoted comments as views the community rejects. It writes a continuous essay of about 500 words and ends with a `Sentiment:` line and a `Score:` line. The essay is streamed, so the panel fills it in as it arrives. The extension reads only those closing lines, sets the label from the score (0–3 negative, 4–6 neutral, 7–10 positive) and removes them from the essay text. If Gemini's reasoning uses up the output limit before the essay finishes, the request is tried once more with less reasoning. If it still cannot finish, or the essay has no score, the panel shows no score and says why.
@@ -149,7 +149,7 @@ News pages are hard to read reliably. Many load their text with JavaScript, spli
 
 **Rendering.** A single inactive, muted tab is opened and reused for every page. For each URL the session:
 
-1. waits for Chrome to report that the page has loaded, for up to 15 seconds. Ad-heavy pages in a hidden tab may not finish loading every ad by then; they are read anyway, and a timeout is reported only if no article is found;
+1. waits until the new page is readable: its HTML has been parsed (checked every 250 ms) or Chrome reports it loaded, whichever comes first, for up to 15 seconds. The story is usually on the page long before every ad has loaded (on Oricon, 0.2 seconds against 2 seconds in a visible tab). A page that is still not readable after 15 seconds is read anyway, and a timeout is reported only if no article is found;
 2. waits for the content to settle, checking the length of the page's text every 250 ms until it stops changing (for up to 8 seconds), even if the page is still loading ads;
 3. injects Mozilla Readability and extracts the article. Readability's result is preferred, unless it has fewer than a third as many sentences as the page's article container (on some busy pages Readability picks the site menu and ads); then the `articleBody` field in the page's structured data (JSON-LD), then the longest visible article container.
 

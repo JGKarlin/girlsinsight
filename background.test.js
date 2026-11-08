@@ -647,6 +647,26 @@ test('the page reader no longer says "Extraction complete. Analyzing..." while G
     assert.ok(!contentScript.includes('progressExtractionComplete'));
 });
 
+// ---------------------------------------------------------------- summary streaming
+
+test('the summary is streamed to the panel as it is written', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (isSentimentRequest(request)
+            ? geminiText('An essay.\nSentiment: Positive\nScore: 7')
+            : geminiStream(['Perfume member ', 'Nocchi announced ', 'her marriage.'])),
+    });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    const summaryRequest = harness.geminiRequests.find(r => !isSentimentRequest(r));
+    assert.equal(summaryRequest.streaming, true);
+    const drafts = harness.runtimeMessages.filter(m => m.action === 'partialResults' && m.type === 'summaryDraft').map(m => m.data.text);
+    assert.ok(drafts.length >= 1, 'drafts were sent');
+    assert.equal(drafts.at(-1), 'Perfume member Nocchi announced her marriage.');
+    const summary = harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary').data.summary;
+    assert.equal(summary, 'Perfume member Nocchi announced her marriage.');
+});
+
 // ---------------------------------------------------------------- summary prompts
 
 for (const [name, articleText] of [

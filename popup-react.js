@@ -122,9 +122,14 @@ const AnalysisResults = ({ i18n }) => {
                 const { type, data } = message;
                 
                 switch(type) {
+                    case 'summaryDraft':
+                        setResults(prev => ({ ...prev, summaryDraft: data.text }));
+                        break;
+
                     case 'summary':
                         setResults(prev => ({ 
                             ...prev, 
+                            summaryDraft: null,
                             summary: data.summary,
                             source: data.source,
                             sourceDetails: data.sourceDetails // Correctly set sourceDetails
@@ -212,6 +217,7 @@ const AnalysisResults = ({ i18n }) => {
     return React.createElement('div', { className: 'results', style: { display: 'block' } },
         React.createElement(SummarySection, {
             summary: results.summary,
+            draft: results.summaryDraft,
             source: results.source,
             sourceDetails: results.sourceDetails, // Pass down to the component
             loading: loading.summary,
@@ -249,8 +255,14 @@ const AnalysisResults = ({ i18n }) => {
     );
 };
 
-// Summary Section Component
-const SummarySection = ({ summary, source, sourceDetails, loading, i18n }) => {
+// Summary Section Component. `draft` is the summary streamed so far.
+const SummarySection = ({ summary, draft, source, sourceDetails, loading, i18n }) => {
+    if (loading && draft) {
+        return React.createElement('div', { className: 'summary-section' },
+            React.createElement('h3', { className: 'section-title' }, i18n('summaryTitle')),
+            React.createElement('div', { className: 'summary-content result-box' }, renderMarkdown(draft))
+        );
+    }
     if (loading) {
         return React.createElement('div', { className: 'summary-section' },
             React.createElement('h3', { className: 'section-title' }, i18n('summaryTitle')),

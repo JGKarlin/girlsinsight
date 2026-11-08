@@ -630,10 +630,10 @@ class GirlsinSightBackground {
                     summaryProgress(i18n.getMessage('progressCheckingArticle'));
                     articleInfo = await this.fetchArticleFromComment([firstComment], { signal, analysisId, progress: summaryProgress });
                     summaryProgress(i18n.getMessage('progressSendingSummaryRequest'));
-                    summary = await this.generateSummary(topicData, [firstComment], articleInfo.text, { signal });
+                    summary = await this.generateSummary(topicData, [firstComment], articleInfo.text, { signal, analysisId });
                 } else {
                     summaryProgress(i18n.getMessage('progressSendingSummaryRequest'));
-                    summary = await this.generateSummary(topicData, firstComment ? [firstComment] : [], null, { signal });
+                    summary = await this.generateSummary(topicData, firstComment ? [firstComment] : [], null, { signal, analysisId });
                 }
 
                 this.throwIfAborted(signal);
@@ -1056,7 +1056,7 @@ class GirlsinSightBackground {
     }
 
     // Generate summary using Gemini API
-    async generateSummary(topicData, comments, articleText = null, { signal } = {}) {
+    async generateSummary(topicData, comments, articleText = null, { signal, analysisId = null } = {}) {
         try {
             const isJapanese = this.settings.language === 'ja';
             const language = isJapanese ? 'Japanese' : 'English';
@@ -1104,13 +1104,20 @@ ${topicData.title}
 ${topComment.slice(0, 1000)}`;
             }
             
-            // Low thinking keeps the summary quick. The cap leaves room for
-            // thinking tokens on top of a sub-300-word summary.
-            return await this.callGeminiAPI(prompt, {
-                maxOutputTokens: 8192,
-                thinkingLevel: 'LOW',
-                signal,
-            });
+            // Low thinking keeps the summary quick, and it is streamed so the
+            // panel shows it as it is written. The cap leaves room for thinking
+            // tokens on top of a sub-300-word summary.
+            const drafts = this.createDraftSender(analysisId, 'summaryDraft');
+            try {
+                return await this.callGeminiAPI(prompt, {
+                    maxOutputTokens: 8192,
+                    thinkingLevel: 'LOW',
+                    onText: drafts.update,
+                    signal,
+                });
+            } finally {
+                drafts.flush();
+            }
             
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -1224,14 +1231,14 @@ Score: <0-10>`;
 
     // Forwards streamed essay text to the side panel at most every
     // DRAFT_INTERVAL_MS; flush() sends whatever is still pending.
-    createDraftSender(analysisId) {
+    createDraftSender(analysisId, type = 'sentimentDraft') {
         let lastSent = 0;
         let pending = null;
         let timer = null;
         const send = () => {
             timer = null;
             lastSent = Date.now();
-            this.sendPartialResults('sentimentDraft', { text: pending }, analysisId);
+            this.sendPartialResults(type, { text: pending }, analysisId);
         };
         return {
             update: text => {

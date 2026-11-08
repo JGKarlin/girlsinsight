@@ -22,6 +22,7 @@ function makeChrome({
     statusCode = 200,
     extractionStatus = 'success',
     readyState = 'complete',
+    documentStates = null, // what readDocumentState sees, call by call; the last one repeats
 } = {}) {
     const onUpdated = chromeEvent();
     const onRemoved = chromeEvent();
@@ -65,6 +66,13 @@ function makeChrome({
                 if (options.files) {
                     calls.readability += 1;
                     return [];
+                }
+                if (options.func.name === 'readDocumentState') {
+                    calls.documentChecks = (calls.documentChecks || 0) + 1;
+                    const state = documentStates
+                        ? documentStates[Math.min(calls.documentChecks, documentStates.length) - 1]
+                        : { url: calls.update.at(-1), readyState };
+                    return [{ result: state }];
                 }
                 if (options.func.name === 'extractRenderedArticlePage') {
                     calls.extraction += 1;
@@ -356,4 +364,42 @@ test('a slow page whose text has stopped changing is read without waiting out th
 
     assert.equal(result.status, 'success');
     assert.ok(fake.calls.stability <= 5, `checked ${fake.calls.stability} times instead of settling`);
+});
+
+test('the article is read as soon as the page is readable, without waiting for every ad to load', async () => {
+    // The story is on the page well before Chrome reports "loaded" (0.2 s
+    // against 2 s for Oricon in a visible tab, far longer in a hidden one).
+    const fake = makeChrome({ completeNavigation: false, readyState: 'interactive' });
+    const session = await RenderedArticleSession.open({
+        chromeApi: fake.chromeApi,
+        statusProbe: fake.statusProbe,
+        loadTimeoutMs: 6_000,
+        stabilityTimeoutMs: 2_000,
+    });
+
+    const started = Date.now();
+    const result = await session.load('https://www.oricon.co.jp/news/2491485/full/');
+    const elapsed = Date.now() - started;
+    await session.close();
+
+    assert.equal(result.status, 'success');
+    assert.ok(elapsed < 3_000, `took ${elapsed} ms; it waited for the "loaded" time limit`);
+});
+
+test('the blank tab is never mistaken for the article page', async () => {
+    const fake = makeChrome({ completeNavigation: false, documentStates: [{ url: 'about:blank', readyState: 'complete' }] });
+    const session = await RenderedArticleSession.open({
+        chromeApi: fake.chromeApi,
+        statusProbe: fake.statusProbe,
+        loadTimeoutMs: 600,
+        stabilityTimeoutMs: 50,
+    });
+
+    const started = Date.now();
+    await session.load('https://news.example/story');
+    const elapsed = Date.now() - started;
+    await session.close();
+
+    assert.ok(fake.calls.documentChecks >= 1, 'the page state was checked');
+    assert.ok(elapsed >= 600, `read the blank tab after ${elapsed} ms instead of waiting for the article`);
 });

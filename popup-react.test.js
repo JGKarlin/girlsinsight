@@ -140,3 +140,10 @@ test('asterisks and underscores that are not Markdown stay as written', () => {
     assert.equal(ofType(tree, 'em').length, 0);
     assert.equal(textOf(byClass(tree, 'summary-content')), text);
 });
+
+test('the summary streamed so far is shown, with its formatting, instead of the loading lines', () => {
+    const tree = SummarySection({ summary: null, draft: 'An *early* summary', source: null, sourceDetails: null, loading: true, i18n });
+
+    assert.deepEqual(ofType(tree, 'em').map(textOf), ['early']);
+    assert.equal(byClass(tree, 'loading-skeleton').length, 0);
+});

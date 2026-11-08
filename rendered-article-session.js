@@ -75,6 +75,15 @@
         }
     }
 
+    // How often to check whether the article tab's new page is readable.
+    const READABLE_CHECK_MS = 250;
+
+    // Serialized by chrome.scripting: the article tab's current page and how
+    // far it has loaded.
+    function readDocumentState() {
+        return { url: document.URL, readyState: document.readyState };
+    }
+
     // This function is serialized by chrome.scripting and must remain self-contained.
     function extractRenderedArticlePage() {
         const fullText = (document.body && document.body.innerText || '').trim();
@@ -374,8 +383,14 @@
             }
         }
 
+        // Resolves when the new page is readable: its HTML is parsed (it may
+        // still be loading ads and images) or Chrome reports it loaded,
+        // whichever comes first. The story is usually on the page long before
+        // every ad has loaded. The tab's previous page (the blank start page or
+        // the last article page) never counts.
         navigate(url, signal) {
             if (signal && signal.aborted) return Promise.reject(abortError());
+            const previousUrl = this.documentUrl || 'about:blank';
             return new Promise((resolve, reject) => {
                 let settled = false;
                 const finish = (error, tab) => {
@@ -385,8 +400,32 @@
                     this.chrome.tabs.onUpdated.removeListener(handleUpdated);
                     this.chrome.tabs.onRemoved.removeListener(handleRemoved);
                     if (signal) signal.removeEventListener('abort', handleAbort);
-                    if (error) reject(error);
-                    else resolve(tab);
+                    if (error) {
+                        reject(error);
+                    } else {
+                        this.documentUrl = (tab && tab.url) || url;
+                        resolve(tab);
+                    }
+                };
+                const checkReadable = async () => {
+                    while (!settled) {
+                        await new Promise(next => setTimeout(next, READABLE_CHECK_MS));
+                        if (settled) return;
+                        try {
+                            const results = await this.chrome.scripting.executeScript({
+                                target: { tabId: this.tabId },
+                                func: readDocumentState,
+                            });
+                            const state = results && results[0] && results[0].result;
+                            if (state && state.readyState !== 'loading' && state.url &&
+                                state.url !== 'about:blank' && state.url !== previousUrl) {
+                                finish(null, { id: this.tabId, url: state.url });
+                            }
+                        } catch (_) {
+                            // Between pages, or a page this extension may not read;
+                            // Chrome's own "loaded" signal or the time limit applies.
+                        }
+                    }
                 };
                 const handleUpdated = (tabId, changeInfo, tab) => {
                     if (tabId === this.tabId && changeInfo.status === 'complete') finish(null, tab);
@@ -407,6 +446,7 @@
                 this.chrome.tabs.update(this.tabId, { url, muted: true }).then((tab) => {
                     if (tab.status === 'complete') finish(null, tab);
                 }).catch((error) => finish(error));
+                checkReadable();
             });
         }
 
