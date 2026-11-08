@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Editors
+.cursor/
+.vscode/
+.idea/
+
+# Node (tests run with the built-in node:test runner)
+node_modules/
+
+# Packaged builds for the Chrome Web Store
+*.zip
+*.crx
+*.pem

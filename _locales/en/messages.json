@@ -1,0 +1,309 @@
+{
+    "appName": { "message": "GirlsinSight" },
+    "appDescription": { "message": "Analyze GirlsChannel topics with AI-powered sentiment analysis" },
+    "settingsTitle": { "message": "Settings" },
+    "closeTitle": { "message": "Close Panel" },
+    "backButton": { "message": "← Back" },
+    "apiConfigTitle": { "message": "API Configuration" },
+    "apiKeyLabel": { "message": "Google Gemini API Key" },
+    "apiKeyPlaceholder": { "message": "Enter your Gemini API key" },
+    "toggleVisibilityTitle": {
+        "message": "Toggle API Key Visibility"
+    },
+    "verifyButton": {
+        "message": "Verify"
+    },
+    "apiKeyHelp": {
+        "message": "How to get your free API key from Google AI Studio."
+    },
+    "langTitle": { "message": "Language Settings" },
+    "langLabel": { "message": "Output Language" },
+    "langJa": { "message": "日本語 (Japanese)" },
+    "langEn": { "message": "英語 (English)" },
+    "analysisSettingsLabel": { "message": "Analysis Settings" },
+    "commentsToAnalyzeTitle": { "message": "Comments to Analyze" },
+    "autoCalcLabel": { "message": "Auto-calculate for analysis" },
+    "manualCommentsAnalysisLabel": { "message": "Comments for Analysis (Manual)" },
+    "manualCommentsDisplayLabel": { "message": "Top and Bottom Comments to Display" },
+    "commentsHelp": { "message": "Number of top and bottom comments to use for analysis and display." },
+    "commentsUnit": { "message": "comments" },
+    "topicTitleFallback": { "message": "GirlsChannel Topic" },
+    "infoLoadFailed": { "message": "Info load failed" },
+    "exportTitle": { "message": "Data Export" },
+    "exportLabel": { "message": "Excel Export Settings" },
+    "exportMetadataLabel": { "message": "Include metadata (dates, scores)" },
+    "exportUrlsLabel": { "message": "Include source URLs" },
+    "statusReady": { "message": "Ready" },
+    "statusLoading": { "message": "Loading..." },
+    "statusExtracting": { "message": "Extracting comments..." },
+    "statusAnalyzing": { "message": "Analyzing..." },
+    "statusGenerating": { "message": "Generating Excel..." },
+    "statusComplete": { "message": "Complete" },
+    "statusError": { "message": "Error" },
+    "analyzeButton": { "message": "Analyze Topic" },
+    "stopButton": { "message": "Stop Analysis" },
+    "downloadButton": { "message": "Download Excel" },
+    "welcomeTitle": { "message": "Welcome to GirlsinSight" },
+    "welcomeDesc": { "message": "Navigate to a GirlsChannel topic to analyze comments and sentiment." },
+    "setupNotice": { "message": "⚠️ Please configure your Gemini API key in settings first." },
+    "openSettings": { "message": "Open Settings" },
+    "goToGC": { "message": "Go to GirlsChannel.net" },
+    "summaryTitle": { "message": "Summary" },
+    "sentimentTitle": { "message": "Sentiment Analysis" },
+    "overallScoreLabel": { "message": "Overall Score" },
+    "sentimentPositive": { "message": "Positive" },
+    "sentimentNegative": { "message": "Negative" },
+    "sentimentNeutral": { "message": "Neutral" },
+    "topCommentsTab": { "message": "Top Comments" },
+    "bottomCommentsTab": { "message": "Bottom Comments" },
+    "statsTitle": { "message": "Statistics" },
+    "commentsAnalyzedLabel": { "message": "Comments Analyzed" },
+    "totalCommentsLabel": { "message": "Total Comments" },
+    "consensusScoreLabel": { "message": "Consensus" },
+    "consensusHigh": { "message": "High" },
+    "consensusModerate": { "message": "Moderate" },
+    "consensusLow": { "message": "Low" },
+    "consensusPoor": { "message": "Poor" },
+    "consensusNone": { "message": "None" },
+    "controversyScoreLabel": { "message": "Controversy Score" },
+    "controversyLabel": { "message": "Controversy" },
+    "controversyUnknown": { "message": "Unknown" },
+    "controversyHigh": { "message": "High Controversy" },
+    "controversyModerate": { "message": "Moderate Controversy" },
+    "controversyLow": { "message": "Low Controversy" },
+    "controversyNone": { "message": "No Controversy" },
+    "statsTotalCommentsAndReplies": {
+        "message": "Total Comments & Replies"
+    },
+    "durationLabel": {
+        "message": "Duration"
+    },
+    "durationDays": { "message": "d " },
+    "durationHours": { "message": "h " },
+    "durationMinutes": { "message": "m" },
+    "reportSheetName": { "message": "Analysis Report" },
+    "commentsSheetName": { "message": "All Comments" },
+    "progressTopicDetected": {
+        "message": "Topic detected"
+    },
+    "progressProcessingTopicPage": {
+        "message": "Processing topic page $page$...",
+        "placeholders": { "page": { "content": "$1" } }
+    },
+    "progressFoundReplyPages": {
+        "message": "Found $count$ pages with replies. Fetching all concurrently...",
+        "placeholders": { "count": { "content": "$1" } }
+    },
+    "progressCheckingArticle": {
+        "message": "Article link found in topic. Checking link..."
+    },
+    "progressCheckingArticleLink": {
+        "message": "Fetching article from: $1"
+    },
+    "progressArticleLinkDead": {
+        "message": "Article link appears to be dead."
+    },
+    "progressSearchingWayback": {
+        "message": "Searching the Wayback Machine for an archive..."
+    },
+    "progressArchiveFound": {
+        "message": "Archive found! Now fetching from the archive..."
+    },
+    "progressNoArchiveFound": {
+        "message": "No working archive could be found."
+    },
+    "progressLiveArticleFound": {
+        "message": "Live article found. Reading..."
+    },
+    "progressScrapedPages": {
+        "message": "Found $count$ pages from the article.",
+        "placeholders": { "count": { "content": "$1" } }
+    },
+    "progressScrapedSinglePage": { "message": "Found 1 page from the article." },
+    "progressScrapingPage": {
+        "message": "Scraping article page $page$...",
+        "placeholders": { "page": { "content": "$1" } }
+    },
+    "progressScrapingPageFailed": {
+        "message": "Failed to scrape page $page$ (Status: $status$).",
+        "placeholders": {
+            "page": { "content": "$1" },
+            "status": { "content": "$2" }
+        }
+    },
+    "apiKeyMissing": { "message": "Gemini API key not configured" },
+    "noCommentsFound": { "message": "No valid comments found to analyze" },
+    "reportTitle": { "message": "GirlsinSight Analysis Report" },
+    "generatedLabel": { "message": "Generated:" },
+    "titleLabel": { "message": "Title:" },
+    "urlLabel": { "message": "URL:" },
+    "detailsLabel": { "message": "Details:" },
+    "commentColumn": { "message": "Comment" },
+    "plusColumn": { "message": "Plus" },
+    "minusColumn": { "message": "Minus" },
+    "dateColumn": { "message": "Date" },
+    "numberColumn": { "message": "Number" },
+    "totalColumn": { "message": "Total" },
+    "urlsColumn": { "message": "URLs" },
+    "headerColumn": { "message": "Header" },
+    "scoreLabel": { "message": "Score" },
+    "consensusLabel": { "message": "Consensus" },
+    "stopConfirmation": { "message": "Analysis in progress. Stop it?" },
+    "analysisFailed": { "message": "Analysis failed" },
+    "analysisTimeout": { "message": "Analysis timed out - try refreshing the page" },
+    "extractionFailed": { "message": "Could not extract comments - refresh and try again" },
+    "apiKeyError": { "message": "AI service error - check your API key" },
+    "analysisStopped": { "message": "Analysis stopped" },
+    "noSource": { "message": "No source available" },
+    "sourceLabel": { "message": "Source" },
+    "fileDownloaded": { "message": "File downloaded" },
+    "downloadFailed": { "message": "Download failed" },
+    "apiKeyRequired": { "message": "API key required" },
+    "testing": { "message": "Verifying..." },
+    "apiKeyValid": { "message": "API Key is valid!" },
+    "apiKeyInvalid": { "message": "API key is invalid or network error" },
+    "progressValidatingApiKey": { "message": "Validating API key..." },
+    "summaryGenerationFailed": { "message": "Summary could not be generated" },
+    "testFailed": { "message": "Test failed" },
+    "settingsSaved": { "message": "Settings saved!" },
+    "saveFailed": { "message": "Failed to save settings" },
+    "saveError": { "message": "Error saving settings" },
+    "savingSettings": { "message": "Saving..." },
+    "loadError": { "message": "Error loading settings" },
+    "saveSuccess": { "message": "Saved!" },
+    "progressParsingPagination": {
+        "message": "Parsing page for pagination links..."
+    },
+    "progressPaginationFound": {
+        "message": "Found next page link via parser."
+    },
+    "progressPaginationNotFound": {
+        "message": "No obvious pagination link found. Trying AI analysis..."
+    },
+    "progressSoft404Check": {
+        "message": "Page loaded. Checking for 'soft 404' content errors..."
+    },
+    "progressSoft404Detected": {
+        "message": "Page appears to be a 'soft 404' (e.g., 'Page not found' message). Treating as a dead link."
+    },
+    "progressSendingSummaryRequest": {
+        "message": "Sending summary request to AI..."
+    },
+    "progressSendingSentimentRequest": {
+        "message": "Processing sentiment analysis..."
+    },
+    "progressSummaryReceived": {
+        "message": "Summary received."
+    },
+    "progressSentimentReceived": {
+        "message": "Sentiment analysis received."
+    },
+    "progressWaitingForSentiment": {
+        "message": "Processing sentiment analysis..."
+    },
+    "progressProcessingComments": {
+        "message": "Processing comments..."
+    },
+    "progressCalculatingStats": {
+        "message": "Calculating statistics..."
+    },
+    "progressFinalizing": {
+        "message": "Finalizing analysis..."
+    },
+    "progressCouldNotFetchArticle": {
+        "message": "Could not fetch article content"
+    },
+    "summaryTitleHeader": {
+        "message": "Summary"
+    },
+    "sentimentTitleHeader": {
+        "message": "Sentiment Analysis"
+    },
+    "statsTitleHeader": {
+        "message": "Statistics"
+    },
+    "dataExportTitle": {
+        "message": "Data Export"
+    },
+    "scrapeRepliesLabel": {
+        "message": "Include replies in Excel export (takes longer)"
+    },
+    "progressLiveSiteReturnedStatus": {
+        "message": "Live site returned status $status$",
+        "placeholders": { "status": { "content": "$1" } }
+    },
+    "progressQueryingWaybackCDX": {
+        "message": "Querying Wayback Machine API..."
+    },
+    "progressVerifiedSnapshotCDX": {
+        "message": "Verified snapshot from Wayback Machine."
+    },
+    "progressExtractingComments": {
+        "message": "Extracting comments...",
+        "description": "Progress message when extracting main comments."
+    },
+    "progressExtractionComplete": {
+        "message": "Extraction complete. Analyzing...",
+        "description": "Progress message when extraction is done."
+    },
+    "activityScoreLabel": {
+        "message": "Activity Score"
+    },
+    "activityOnFire": {
+        "message": "On Fire"
+    },
+    "activityVeryActive": {
+        "message": "Very Active"
+    },
+    "activityActive": {
+        "message": "Active"
+    },
+    "activityLively": {
+        "message": "Lively"
+    },
+    "activityModerate": {
+        "message": "Moderate"
+    },
+    "activitySteady": {
+        "message": "Steady"
+    },
+    "activityQuiet": {
+        "message": "Quiet"
+    },
+    "activitySlow": {
+        "message": "Slow"
+    },
+    "activityDormant": {
+        "message": "Dormant"
+    },
+    "activityInactive": {
+        "message": "Inactive (Dead)"
+    },
+    "modalTitle": {
+        "message": "How to get your Google AI Studio API Key"
+    },
+    "modalStep1": {
+        "message": "<strong>Visit Google AI Studio:</strong> Go to the <a href=\"https://aistudio.google.com/\" target=\"_blank\">Google AI Studio website</a>."
+    },
+    "modalStep2": {
+        "message": "<strong>Sign in with a Google Account:</strong> Log in using your existing Google account. A separate “Gemini account” is not required."
+    },
+    "modalStep3": {
+        "message": "<strong>Generate an API Key:</strong> After logging in, click on the “Get API key” button (usually at the top). Create a new key within an existing or new project."
+    },
+    "modalStep4": {
+        "message": "<strong>No Gemini Account Needed:</strong> Access to the Gemini API is managed through your Google account."
+    },
+    "modalStep5": {
+        "message": "<strong>No Payment Required Initially:</strong> You can start using the Gemini API without entering payment information."
+    },
+    "modalStep6": {
+        "message": "<strong>Use the Free Tier:</strong> The free tier is limited to 25 requests/day."
+    },
+    "modalStep7": {
+        "message": "<strong>Upgrade if Needed:</strong> If usage exceeds free limits, set up a billing account to upgrade to a paid plan with higher rate limits."
+    },
+    "archivedCopyLabel": {
+        "message": "Archived copy"
+    }
+}

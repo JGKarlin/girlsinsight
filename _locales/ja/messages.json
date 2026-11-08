@@ -1,0 +1,313 @@
+{
+    "appName": { "message": "GirlsinSight" },
+    "appDescription": { "message": "AIによる感情分析でガールズちゃんねるのトピックを分析" },
+    "settingsTitle": { "message": "設定" },
+    "closeTitle": { "message": "パネルを閉じる" },
+    "backButton": { "message": "← 戻る" },
+    "apiConfigTitle": { "message": "API設定" },
+    "apiKeyLabel": { "message": "Google Gemini APIキー" },
+    "apiKeyPlaceholder": { "message": "Gemini APIキーを入力してください" },
+    "toggleVisibilityTitle": {
+        "message": "APIキーの表示を切り替える"
+    },
+    "verifyButton": {
+        "message": "検証"
+    },
+    "apiKeyHelp": {
+        "message": "Google AI Studioから無料APIキーを取得する方法。"
+    },
+    "langLabel": { "message": "出力言語" },
+    "langJa": { "message": "日本語 (Japanese)" },
+    "langEn": { "message": "英語 (English)" },
+    "analysisSettingsLabel": { "message": "分析設定" },
+    "commentsToAnalyzeTitle": { "message": "分析するコメント" },
+    "autoCalcLabel": { "message": "分析用に自動計算" },
+    "manualCommentsAnalysisLabel": { "message": "分析用のコメント（手動）" },
+    "manualCommentsDisplayLabel": { "message": "表示するコメント" },
+    "commentsHelp": { "message": "分析・表示に使用する上位・下位のコメント数。" },
+    "commentsUnit": { "message": "コメント" },
+    "dataExportTitle": {
+        "message": "データのエクスポート"
+    },
+    "topicTitleFallback": { "message": "ガールズちゃんねるのトピック" },
+    "infoLoadFailed": { "message": "情報読み込み失敗" },
+    "exportTitle": { "message": "データのエクスポート" },
+    "exportLabel": { "message": "Excelエクスポート設定" },
+    "exportMetadataLabel": { "message": "メタデータ（日付、スコア）を含む" },
+    "exportUrlsLabel": { "message": "ソースURLを含む" },
+    "statusReady": { "message": "準備完了" },
+    "statusLoading": { "message": "読み込み中..." },
+    "statusExtracting": { "message": "コメントを抽出中..." },
+    "statusAnalyzing": { "message": "分析中..." },
+    "statusGenerating": { "message": "Excelを生成中..." },
+    "statusComplete": { "message": "完了" },
+    "statusError": { "message": "エラー" },
+    "analyzeButton": { "message": "トピックを分析" },
+    "stopButton": { "message": "分析を停止" },
+    "downloadButton": { "message": "Excelをダウンロード" },
+    "welcomeTitle": { "message": "GirlsinSightへようこそ" },
+    "welcomeDesc": { "message": "ガールズちゃんねるのトピックに移動して、<br>コメントと感情を分析します。" },
+    "setupNotice": { "message": "⚠️ 設定でGemini APIキーを先に設定してください。" },
+    "openSettings": { "message": "設定を開く" },
+    "goToGC": { "message": "ガールズちゃんねるへ移動" },
+    "summaryTitle": { "message": "概要" },
+    "sentimentTitle": { "message": "感情分析" },
+    "overallScoreLabel": { "message": "総合スコア" },
+    "sentimentPositive": { "message": "ポジティブ" },
+    "sentimentNegative": { "message": "ネガティブ" },
+    "sentimentNeutral": { "message": "ニュートラル" },
+    "topCommentsTab": { "message": "高評価のコメント" },
+    "bottomCommentsTab": { "message": "低評価のコメント" },
+    "statsTitle": { "message": "統計" },
+    "commentsAnalyzedLabel": { "message": "分析されたコメント" },
+    "totalCommentsLabel": { "message": "総コメント数" },
+    "consensusScoreLabel": { "message": "合意" },
+    "consensusHigh": { "message": "高い" },
+    "consensusModerate": { "message": "中程度" },
+    "consensusLow": { "message": "低い" },
+    "consensusPoor": { "message": "乏しい" },
+    "consensusNone": { "message": "なし" },
+    "controversyScoreLabel": { "message": "論争スコア" },
+    "controversyLabel": { "message": "論争" },
+    "controversyUnknown": { "message": "不明" },
+    "controversyHigh": { "message": "高い論争" },
+    "controversyModerate": { "message": "中程度の論争" },
+    "controversyLow": { "message": "低い論争" },
+    "controversyNone": { "message": "論争なし" },
+    "statsTotalCommentsAndReplies": {
+        "message": "総コメントと返信数"
+    },
+    "durationLabel": {
+        "message": "期間"
+    },
+    "durationDays": { "message": "日 " },
+    "durationHours": { "message": "時間 " },
+    "durationMinutes": { "message": "分" },
+    "reportSheetName": { "message": "分析レポート" },
+    "commentsSheetName": { "message": "すべてのコメント" },
+    "progressTopicDetected": {
+        "message": "トピックを検出しました"
+    },
+    "progressProcessingTopicPage": {
+        "message": "トピックページを処理しています $page$...",
+        "placeholders": { "page": { "content": "$1" } }
+    },
+    "progressFoundReplyPages": {
+        "message": "返信のあるページが$count$件見つかりました。すべてを同時に取得しています...",
+        "placeholders": { "count": { "content": "$1" } }
+    },
+    "progressCheckingArticle": {
+        "message": "トピック内で記事リンクが見つかりました。リンクを確認中..."
+    },
+    "progressCheckingArticleLink": {
+        "message": "記事を取得中: $1"
+    },
+    "progressArticleLinkDead": {
+        "message": "記事のリンクが無効のようです。"
+    },
+    "progressSearchingWayback": {
+        "message": "Wayback Machineでアーカイブを検索中..."
+    },
+    "progressArchiveFound": {
+        "message": "アーカイブが見つかりました！アーカイブから取得しています..."
+    },
+    "progressNoArchiveFound": {
+        "message": "有効なアーカイブが見つかりませんでした。"
+    },
+    "progressLiveArticleFound": {
+        "message": "有効な記事が見つかりました。スクレイピング中..."
+    },
+    "progressScrapedPages": {
+        "message": "記事から$count$ページを読込みました。",
+        "placeholders": { "count": { "content": "$1" } }
+    },
+    "progressScrapedSinglePage": { "message": "記事から1ページをスクレイピングしました。" },
+    "progressScrapingPage": {
+        "message": "記事ページ$page$を読込み中...",
+        "placeholders": { "page": { "content": "$1" } }
+    },
+    "progressScrapingPageFailed": {
+        "message": "ページ$page$のスクレイピングに失敗しました（ステータス: $status$）。",
+        "placeholders": {
+            "page": { "content": "$1" },
+            "status": { "content": "$2" }
+        }
+    },
+    "apiKeyMissing": { "message": "Gemini APIキーが設定されていません" },
+    "noCommentsFound": { "message": "分析する有効なコメントが見つかりません" },
+    "reportTitle": { "message": "GirlsinSight 分析レポート" },
+    "generatedLabel": { "message": "生成日時:" },
+    "titleLabel": { "message": "タイトル:" },
+    "urlLabel": { "message": "URL:" },
+    "detailsLabel": { "message": "詳細:" },
+    "commentColumn": { "message": "コメント" },
+    "plusColumn": { "message": "プラス" },
+    "minusColumn": { "message": "マイナス" },
+    "dateColumn": { "message": "日付" },
+    "numberColumn": { "message": "番号" },
+    "totalColumn": { "message": "合計" },
+    "urlsColumn": { "message": "URL" },
+    "headerColumn": { "message": "ヘッダー" },
+    "scoreLabel": { "message": "スコア" },
+    "consensusLabel": { "message": "コンセンサス" },
+    "stopConfirmation": { "message": "分析が進行中です。停止しますか？" },
+    "analysisFailed": { "message": "分析に失敗しました" },
+    "analysisTimeout": { "message": "分析がタイムアウトしました - ページを再読み込みしてください" },
+    "extractionFailed": { "message": "コメントを抽出できませんでした - 再読み込みしてもう一度お試しください" },
+    "apiKeyError": { "message": "AIサービスエラー - APIキーを確認してください" },
+    "analysisStopped": { "message": "分析が停止しました" },
+    "noSource": { "message": "ソースがありません" },
+    "sourceLabel": { "message": "ソース" },
+    "fileDownloaded": { "message": "ファイルがダウンロードされました" },
+    "downloadFailed": { "message": "ダウンロードに失敗しました" },
+    "saveError": { "message": "設定の保存中にエラーが発生しました。" },
+    "savingSettings": { "message": "保存中..." },
+    "loadError": { "message": "設定の読み込み中にエラーが発生しました。" },
+    "apiKeyRequired": { "message": "検証にはAPIキーが必要です。" },
+    "testing": { "message": "検証中..." },
+    "apiKeyValid": { "message": "APIキーは有効です！" },
+    "apiKeyInvalid": { "message": "APIキーが無効か、ネットワークエラーが発生しました" },
+    "progressValidatingApiKey": { "message": "APIキーを検証中..." },
+    "summaryGenerationFailed": { "message": "要約を生成できませんでした" },
+    "testFailed": { "message": "テストに失敗しました" },
+    "settingsSaved": { "message": "設定が保存されました" },
+    "saveFailed": { "message": "設定の保存に失敗しました" },
+    "saveSuccess": { "message": "保存しました" },
+    "progressParsingPagination": {
+        "message": "ページ内のページネーションリンクを解析中...",
+        "description": "パーサーを使用して次ページリンクを確認中の進捗メッセージ。"
+    },
+    "progressPaginationFound": {
+        "message": "パーサーで次ページリンクが見つかりました。",
+        "description": "パーサーが次ページリンクを見つけた際の成功メッセージ。"
+    },
+    "progressPaginationNotFound": {
+        "message": "明確なページネーションリンクが見つかりません。AI分析を試みます...",
+        "description": "パーサーが失敗し、AIフォールバックが使用される際のメッセージ。"
+    },
+    "progressSoft404Check": {
+        "message": "ページを読み込みました。「ソフト404」のコンテンツエラーを確認中...",
+        "description": "ページが読み込まれ、「ソフト404」エラーの確認中であることを示す進捗メッセージ。"
+    },
+    "progressSoft404Detected": {
+        "message": "このページは「ソフト404」（例：「ページが見つかりません」）のようです。無効なリンクとして扱います。",
+        "description": "「ソフト404」が検出され、リンクが無効として扱われることを示す進捗メッセージ。"
+    },
+    "progressSendingSummaryRequest": {
+        "message": "AIに概要要求を送信中...",
+        "description": "AIに概要要求を送信中であることを示す進捗メッセージ。"
+    },
+    "progressSendingSentimentRequest": {
+        "message": "AIに感情分析要求を送信中...",
+        "description": "AIに感情分析要求を送信中であることを示す進捗メッセージ。"
+    },
+    "progressSummaryReceived": {
+        "message": "概要を受信しました。",
+        "description": "概要の受信が完了したことを示す進捗メッセージ。"
+    },
+    "progressSentimentReceived": {
+        "message": "感情分析を受信しました。",
+        "description": "感情分析の受信が完了したことを示す進捗メッセージ。"
+    },
+    "progressWaitingForSentiment": {
+        "message": "感情分析を処理中...",
+        "description": "感情分析の処理中であることを示す進捗メッセージ。"
+    },
+    "progressProcessingComments": {
+        "message": "コメントを処理中...",
+        "description": "コメント処理中の進捗メッセージ。"
+    },
+    "progressCalculatingStats": {
+        "message": "統計を計算中...",
+        "description": "統計計算中の進捗メッセージ。"
+    },
+    "progressFinalizing": {
+        "message": "分析を最終処理中...",
+        "description": "分析の最終処理中の進捗メッセージ。"
+    },
+    "progressCouldNotFetchArticle": {
+        "message": "記事のコンテンツを取得できませんでした",
+        "description": "記事の取得に失敗した際のメッセージ。"
+    },
+    "scrapeRepliesLabel": {
+        "message": "Excelエクスポートに返信を含める<br>（時間がかかります）"
+    },
+    "progressLiveSiteReturnedStatus": {
+        "message": "ライブサイトがステータス$status$を返しました",
+        "placeholders": { "status": { "content": "$1" } }
+    },
+    "progressQueryingWaybackCDX": {
+        "message": "Wayback Machine APIをクエリ中..."
+    },
+    "progressVerifiedSnapshotCDX": {
+        "message": "CDXからのスナップショットを確認しました。"
+    },
+    "progressExtractingComments": {
+        "message": "コメントを抽出中...",
+        "description": "Progress message when extracting main comments."
+    },
+    "progressExtractionComplete": {
+        "message": "抽出完了。分析中...",
+        "description": "Progress message when extraction is done."
+    },
+    "activityScoreLabel": {
+        "message": "アクティビティスコア"
+    },
+    "activityOnFire": {
+        "message": "炎上中"
+    },
+    "activityVeryActive": {
+        "message": "非常に活発"
+    },
+    "activityActive": {
+        "message": "活発"
+    },
+    "activityLively": {
+        "message": "活気がある"
+    },
+    "activityModerate": {
+        "message": "普通"
+    },
+    "activitySteady": {
+        "message": "安定的"
+    },
+    "activityQuiet": {
+        "message": "静か"
+    },
+    "activitySlow": {
+        "message": "低調"
+    },
+    "activityDormant": {
+        "message": "休止中"
+    },
+    "activityInactive": {
+        "message": "非アクティブ"
+    },
+    "modalTitle": {
+        "message": "Google AI Studio APIキーの<br>入手方法"
+    },
+    "modalStep1": {
+        "message": "<strong>Google AI Studioにアクセス：</strong><a href=\"https://aistudio.google.com/\" target=\"_blank\">Google AI Studioのウェブサイト</a>にアクセスします。"
+    },
+    "modalStep2": {
+        "message": "<strong>Googleアカウントでサインイン：</strong>既存のGoogleアカウントでログインします。別途「Geminiアカウント」は不要です。"
+    },
+    "modalStep3": {
+        "message": "<strong>APIキーを生成：</strong>ログイン後、「APIキーを取得」ボタンをクリックし、既存または新規プロジェクト内で新しいキーを作成します。"
+    },
+    "modalStep4": {
+        "message": "<strong>Geminiアカウントは不要：</strong>Gemini APIへのアクセスはGoogleアカウントで管理されます。"
+    },
+    "modalStep5": {
+        "message": "<strong>初期費用は不要：</strong>支払い情報を入力せずにGemini APIの利用を開始できます。"
+    },
+    "modalStep6": {
+        "message": "<strong>無料枠を利用：</strong>無料枠には1日あたり25件のリクエスト制限があります。"
+    },
+    "modalStep7": {
+        "message": "<strong>必要に応じてアップグレード：</strong>無料枠を超える場合は、請求先アカウントを設定して有料プランにアップグレードすると、より高いレート制限が適用されます。"
+    },
+    "archivedCopyLabel": {
+        "message": "アーカイブ版"
+    }
+}

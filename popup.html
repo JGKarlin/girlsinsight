@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GirlsinSight</title>
+    <link rel="stylesheet" href="popup.css">
+    <style>
+        .comment-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin: 5px 0;
+            display: block;
+        }
+        
+        /* When images are mixed with text, add some spacing */
+        .comment-text span + .comment-image,
+        .comment-image + span {
+            margin-top: 8px;
+        }
+        
+        /* Ensure text after images starts on a new line */
+        .comment-text {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+    </style>
+    <!-- React libraries -->
+    <script src="lib/react.production.min.js"></script>
+    <script src="lib/react-dom.production.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="status-bar">
+            <div id="status-indicator">
+                <div class="status-dot ready"></div>
+                <span id="status-text" data-i18n="statusReady"></span>
+            </div>
+        </div>
+
+        <div class="content" id="content">
+            <div class="welcome-screen" id="welcome-screen">
+                <div class="welcome-icon">
+                    <img src="icons/icon128.png" alt="GirlsinSight" />
+                </div>
+                <h2 class="welcome-title" data-i18n="welcomeTitle"></h2>
+                <p class="welcome-description" data-i18n="welcomeDesc"></p>
+                <button class="setup-btn" id="go-to-gc-btn" data-i18n="goToGC" style="margin-top: 15px;"></button>
+                <div class="setup-notice" id="setup-notice" style="display: none;">
+                    <p data-i18n="setupNotice"></p>
+                    <button class="setup-btn" id="setup-btn" data-i18n="openSettings"></button>
+                </div>
+            </div>
+
+            <div class="analysis-view" id="analysis-view" style="display: none;">
+                <div class="topic-header">
+                    <h2 class="topic-title" id="topic-title"></h2>
+                    <div class="topic-url" id="topic-url"></div>
+                    <div class="topic-meta">
+                        <span class="analysis-date" id="analysis-date"></span>
+                        <span class="comment-count" id="comment-count"></span>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button class="analyze-btn" id="analyze-btn">
+                        <span class="btn-text" data-i18n="analyzeButton"></span>
+                        <span class="btn-loader" style="display: none;">⏳</span>
+                    </button>
+                </div>
+
+                <!-- React mount point for results -->
+                <div id="results-root"></div>
+            </div>
+        </div>
+
+        <footer class="footer-bar">
+            <button id="settings-btn" class="icon-btn dark-icon" data-i18n-title="settingsTitle">⚙️</button>
+        </footer>
+
+        <div class="settings-view" id="settings-view" style="display: none;">
+            <div class="settings-header">
+                <button class="icon-btn dark-icon" id="back-btn">←</button>
+                <h2 class="section-title" data-i18n="settingsTitle"></h2>
+            </div>
+            
+            <div class="settings-content">
+                <div class="setting-group">
+                    <label for="gemini-api-key" class="setting-label" data-i18n="apiKeyLabel"></label>
+                    <div class="input-group">
+                        <input 
+                            type="password" 
+                            id="gemini-api-key" 
+                            class="setting-input" 
+                            data-i18n-placeholder="apiKeyPlaceholder"
+                            autocomplete="off"
+                        >
+                        <button type="button" class="toggle-visibility" id="toggle-visibility" data-i18n-title="toggleVisibilityTitle">
+                            👁️
+                        </button>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="test-api" data-i18n="verifyButton"></button>
+                    <div id="api-key-status" class="status-box"></div>
+                    <div id="api-key-help" class="help-text api-key-link" data-i18n="apiKeyHelp">
+                    </div>
+                    <div class="validation-status" id="validation-status"></div>
+                </div>
+
+                <div class="setting-group">
+                    <label class="setting-label" data-i18n="langLabel"></label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="language" value="ja" id="lang-ja" checked>
+                            <span class="radio-custom"></span>
+                            <span class="radio-label" data-i18n="langJa"></span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="language" value="en" id="lang-en">
+                            <span class="radio-custom"></span>
+                            <span class="radio-label" data-i18n="langEn"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label class="setting-label" data-i18n="commentsToAnalyzeTitle"></label>
+                    <div class="checkbox-group standalone">
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="auto-comments-checkbox" checked>
+                            <span class="checkbox-custom"></span>
+                            <span class="checkbox-label" data-i18n="autoCalcLabel"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="setting-group" id="manual-comments-group">
+                    <div class="setting-label-group">
+                        <label class="setting-label" data-i18n="manualCommentsAnalysisLabel"></label>
+                        <div class="slider-value" id="analysis-slider-value">100</div>
+                    </div>
+                    <div class="slider-group">
+                        <input type="range" id="analysis-comments-range" min="5" max="1000" value="100" class="slider">
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-label-group">
+                        <label class="setting-label" data-i18n="manualCommentsDisplayLabel"></label>
+                        <div class="slider-value" id="display-slider-value">3</div>
+                    </div>
+                    <div class="slider-group">
+                        <input type="range" id="display-comments-range" min="0" max="10" value="3" class="slider">
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label class="setting-label" data-i18n="dataExportTitle"></label>
+                    <div class="checkbox-group standalone">
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="scrape-replies-checkbox">
+                            <span class="checkbox-custom"></span>
+                            <span class="checkbox-label" data-i18n="scrapeRepliesLabel"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="status-message" id="status-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Key Instructions Modal -->
+    <div id="api-key-modal" class="modal-container hidden">
+        <div class="modal-content">
+            <button id="modal-close-button" class="modal-close">&times;</button>
+            <div class="modal-header">
+                <svg class="gemini-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2.824L13.884 10.116L21.176 12L13.884 13.884L12 21.176L10.116 13.884L2.824 12L10.116 10.116L12 2.824Z" fill="#747775"/>
+                </svg>
+                <h2 data-i18n="modalTitle"></h2>
+            </div>
+            <ol>
+                <li data-i18n="modalStep1"></li>
+                <li data-i18n="modalStep2"></li>
+                <li data-i18n="modalStep3"></li>
+                <li data-i18n="modalStep4"></li>
+                <li data-i18n="modalStep5"></li>
+                <li data-i18n="modalStep6"></li>
+                <li data-i18n="modalStep7"></li>
+            </ol>
+        </div>
+    </div>
+    
+    <script src="lib/react.production.min.js"></script>
+    <script src="lib/react-dom.production.min.js"></script>
+    <script src="popup-react.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>
