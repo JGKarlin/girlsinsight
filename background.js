@@ -18,9 +18,13 @@ const DEBUG_MODE = false; // true shows article source details and verbose logs
 const debugLog = (...args) => { if (DEBUG_MODE) console.log(...args); };
 
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
-// Google's recommended replacement for gemini-2.5-pro and gemini-2.5-flash,
-// which are deprecated and auto-route to other models from December 1, 2026.
-const GEMINI_MODEL = 'gemini-3.8-flash';
+// The essay's model. gemini-2.5-pro and gemini-2.5-flash are deprecated and
+// auto-route to other models from December 1, 2026.
+const GEMINI_MODEL = 'gemini-3.6-flash';
+// Never used: on the free tier Google refuses nearly every gemini-3.8-flash
+// request with "high demand" (November 2026), so trying it first only cost
+// time and a "busy" message on almost every run.
+const SKIPPED_MODELS = ['gemini-3.8-flash'];
 // If a key cannot use GEMINI_MODEL, the newest stable "gemini-X.Y-flash" it can
 // use is chosen instead, as long as it accepts thinkingLevel (3.6 and newer).
 const MIN_FALLBACK_FLASH_VERSION = 306; // major * 100 + minor
@@ -44,11 +48,12 @@ const SAFETY_SETTINGS = [
 ].map(category => ({ category, threshold: 'OFF' }));
 // Longest wait a rate-limit reply may ask for before we give up instead.
 const MAX_RETRY_WAIT_MS = 30_000;
-// How long a request may go without hearing anything from Gemini before it is
-// given up and tried again. Under heavy demand Gemini can hold free-tier
-// requests without ever answering, or stop partway through a reply. The limit
-// starts over with every piece Gemini sends, including the essay's thinking
-// notes, so a long but healthy reply is never cut off.
+// Under heavy demand Gemini can hold free-tier requests without ever
+// answering, or stop partway through a reply. A request is given up and tried
+// again if the reply has not started within FIRST_WORDS_LIMIT_MS (Gemini
+// thinks first and sends thinking notes only now and then, so notes do not
+// count), or if, once it has started, Gemini goes quiet for SILENCE_LIMIT_MS.
+const FIRST_WORDS_LIMIT_MS = 90_000;
 const SILENCE_LIMIT_MS = 30_000;
 // How often streamed essay text is forwarded to the side panel.
 const DRAFT_INTERVAL_MS = 300;
@@ -886,7 +891,8 @@ class GirlsinSightBackground {
     usableGeminiModels(models) {
         const usable = models
             .filter(model => (model.supportedGenerationMethods || []).includes('generateContent'))
-            .map(model => String(model.name || '').replace(/^models\//, ''));
+            .map(model => String(model.name || '').replace(/^models\//, ''))
+            .filter(name => !SKIPPED_MODELS.includes(name));
         const flash = usable
             .map(name => ({ name, match: name.match(/^gemini-(\d+)(?:\.(\d+))?-flash$/) }))
             .filter(({ match }) => match)
@@ -1608,6 +1614,7 @@ Score: <0-10>`;
         onThought = null,
         signal,
         maxAttempts = 3,
+        firstWordsMs = FIRST_WORDS_LIMIT_MS,
         silenceMs = SILENCE_LIMIT_MS,
     } = {}) {
         const thinkingConfig = onThought ? { thinkingLevel, includeThoughts: true } : { thinkingLevel };
@@ -1631,18 +1638,22 @@ Score: <0-10>`;
                 debugLog(`Gemini ${model} attempt ${attempt}/${maxAttempts}`);
 
                 // Each attempt has its own abort: the run's signal (panel closed)
-                // or the silence limit, which starts over whenever Gemini sends
-                // anything.
+                // or a time limit: firstWordsMs until the reply text starts,
+                // then silenceMs from each piece of text to the next.
                 const attemptAbort = new AbortController();
                 const stopAttempt = () => attemptAbort.abort();
                 if (signal) signal.addEventListener('abort', stopAttempt, { once: true });
                 let timedOut = false;
                 let timer = null;
-                const heardFromGemini = () => {
+                const giveUpAfter = ms => {
                     clearTimeout(timer);
-                    timer = setTimeout(() => { timedOut = true; attemptAbort.abort(); }, silenceMs);
+                    timer = setTimeout(() => { timedOut = true; attemptAbort.abort(); }, ms);
                 };
-                heardFromGemini();
+                giveUpAfter(firstWordsMs);
+                const textArrived = text => {
+                    if (text) giveUpAfter(silenceMs);
+                    onText(text);
+                };
                 try {
                     let response;
                     try {
@@ -1659,13 +1670,12 @@ Score: <0-10>`;
                         if (networkError.name === 'AbortError') throw networkError;
                         throw this.geminiError(`Network error: ${networkError.message}`, { retryable: true });
                     }
-                    heardFromGemini();
                     if (!response.ok) throw await this.geminiHttpError(response);
 
                     const reply = { text: '', finishReason: null, blockReason: null };
                     if (onText) {
                         await this.readGeminiStream(response, reply, {
-                            onText, onThought, onPiece: heardFromGemini, signal: attemptAbort.signal,
+                            onText: textArrived, onThought, signal: attemptAbort.signal,
                         });
                     } else {
                         this.absorbGeminiChunk(reply, await response.json());
@@ -1853,9 +1863,9 @@ Score: <0-10>`;
     }
 
     // Reads a streamGenerateContent?alt=sse body: "data: {json}" events
-    // separated by blank lines. onPiece is called whenever anything arrives;
-    // aborting `signal` stops the read even if Gemini has gone quiet.
-    async readGeminiStream(response, reply, { onText, onThought = null, onPiece = () => {}, signal = null }) {
+    // separated by blank lines. Aborting `signal` stops the read even if
+    // Gemini has gone quiet.
+    async readGeminiStream(response, reply, { onText, onThought = null, signal = null }) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -1882,7 +1892,6 @@ Score: <0-10>`;
             for (;;) {
                 const { value, done } = await Promise.race([reader.read(), stopped]);
                 if (done) break;
-                onPiece();
                 buffer += decoder.decode(value, { stream: true });
                 const events = buffer.split(/\r?\n\r?\n/);
                 buffer = events.pop();

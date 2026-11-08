@@ -117,6 +117,7 @@ function stalledStream(pieces) {
 const DEFAULT_MODELS = [
     { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
     { name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+    { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent', 'countTokens'] },
 ];
 
 /**
@@ -129,9 +130,10 @@ const DEFAULT_MODELS = [
  * @param {(request) => object} [options.gemini]
  *        returns a fetch-style response for each generate call
  * @param {number[]} [options.heldTimerDelays] timers of these lengths are
- *        recorded but never fire. By default that is the 30 s silence limit,
- *        so a test can hold back a Gemini reply without it counting as
- *        Gemini going quiet; tests of the limit itself pass [].
+ *        recorded but never fire. By default those are the 90 s wait for
+ *        the first words and the 30 s silence limit, so a test can hold back
+ *        a Gemini reply without it counting as Gemini going quiet; tests of
+ *        the limits themselves pass their own list.
  */
 async function loadBackground({
     sync = {},
@@ -140,7 +142,7 @@ async function loadBackground({
     models = DEFAULT_MODELS,
     modelsReply = null,
     gemini = () => geminiText('ok'),
-    heldTimerDelays = [30_000],
+    heldTimerDelays = [30_000, 90_000],
 } = {}) {
     const runtimeMessages = [];
     const geminiRequests = [];

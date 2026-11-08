@@ -205,7 +205,7 @@ test('a fresh install stores the default settings', async () => {
 
 // ---------------------------------------------------------------- Gemini requests
 
-test('Gemini requests follow the gemini-3.8-flash contract and keep the key out of the URL', async () => {
+test('Gemini requests follow the Gemini 3 request contract and keep the key out of the URL', async () => {
     // From the Gemini API reference and the official @google/genai SDK:
     // thinking is set with generationConfig.thinkingConfig.thinkingLevel,
     // `store` sits at the top level of the body, and the key can be sent in
@@ -215,7 +215,7 @@ test('Gemini requests follow the gemini-3.8-flash contract and keep the key out 
 
     assert.equal(harness.geminiRequests.length, 2, 'one summary and one sentiment request');
     for (const { model, body, url, headers } of harness.geminiRequests) {
-        assert.equal(model, 'gemini-3.8-flash');
+        assert.ok(['gemini-3.5-flash-lite', 'gemini-3.6-flash'].includes(model), model);
         assert.doesNotMatch(url, /[?&]key=/);
         assert.equal(headers['x-goog-api-key'], 'test-key');
         assert.equal(body.store, false);
@@ -371,14 +371,16 @@ const neverAnswers = request => new Promise((_, reject) => request.signal.addEve
     reject(error);
 }));
 
-// How long a request may go without hearing anything from Gemini.
+// How long Gemini may take to start writing (its thinking comes first), and
+// how long it may then go quiet partway through the reply.
+const FIRST_WORDS_LIMIT_MS = 90_000;
 const SILENCE_LIMIT_MS = 30_000;
 
-test('a summary request Gemini never answers is given up after 30 s of silence and sent to the fallback model', async () => {
+test('a summary request Gemini never answers is given up after 90 s and sent to the fallback model', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
-        heldTimerDelays: [], // the silence limit fires
-        gemini: request => (request.model === 'gemini-3.8-flash' ? neverAnswers(request) : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
+        heldTimerDelays: [], // the limits fire
+        gemini: request => (request.model === 'gemini-3.5-flash-lite' && !isSentimentRequest(request) ? neverAnswers(request) : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
     });
     const outcome = await Promise.race([
         runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 }),
@@ -387,17 +389,49 @@ test('a summary request Gemini never answers is given up after 30 s of silence a
 
     assert.notEqual(outcome, 'still stuck', 'the run never moved past the summary request');
     assert.equal(outcome.result.success, true);
-    assert.ok(harness.timerDelays.includes(SILENCE_LIMIT_MS), 'the summary request had a 30 s silence limit');
+    assert.ok(harness.timerDelays.includes(FIRST_WORDS_LIMIT_MS), 'the summary request waited up to 90 s for its first words');
     assert.ok(!harness.timerDelays.includes(60_000), 'the old 60 s limit is gone');
     const summary = harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary');
     assert.equal(summary.data.summary, 'A summary.');
 });
 
-test('the essay has the same 30 s silence limit instead of a 3-minute wait', async () => {
+test('the essay waits up to 90 s for its first words instead of 3 minutes', async () => {
     const harness = await loadBackground({ sync: { language: 'en' } });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
-    assert.ok(harness.timerDelays.includes(SILENCE_LIMIT_MS));
+    assert.ok(harness.timerDelays.includes(FIRST_WORDS_LIMIT_MS));
     assert.ok(!harness.timerDelays.includes(180_000));
+});
+
+// A reply that sends one thinking note, goes quiet while Gemini keeps
+// thinking, and only then writes the essay.
+function longThinkThenEssay() {
+    const encoder = new TextEncoder();
+    const event = parts => encoder.encode(`data: ${JSON.stringify({ candidates: [{ content: { parts, role: 'model' } }] })}\r\n\r\n`);
+    const body = new ReadableStream({
+        start(controller) {
+            controller.enqueue(event([{ text: '**Weighing the comments**', thought: true }]));
+            setTimeout(() => {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    candidates: [{ content: { parts: [{ text: 'A finished essay.\nSentiment: positive\nScore: 8' }], role: 'model' }, finishReason: 'STOP' }],
+                })}\r\n\r\n`));
+                controller.close();
+            }, 20);
+        },
+    });
+    return { ok: true, status: 200, statusText: '200', body, text: async () => '', json: async () => ({}) };
+}
+
+test('a long think with few notes is not cut off: the 30 s silence check only starts with the first words', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        heldTimerDelays: [FIRST_WORDS_LIMIT_MS], // 30 s timers fire at once; the 90 s wait does not
+        gemini: scriptedGemini(() => longThinkThenEssay()),
+    });
+    const { result, sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.equal(result.success, true);
+    assert.equal(harness.geminiRequests.filter(isSentimentRequest).length, 1, 'the essay request was cut off while Gemini was thinking');
+    assert.match(sentiment.details, /A finished essay/);
 });
 
 test('the silence limit starts over each time Gemini sends part of its reply', async () => {
@@ -417,8 +451,8 @@ test('the silence limit starts over each time Gemini sends part of its reply', a
 test('an essay that stops partway is given up after 30 s of silence and written by the fallback model', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
-        heldTimerDelays: [], // the silence limit fires
-        gemini: scriptedGemini(request => (request.model === 'gemini-3.8-flash'
+        heldTimerDelays: [FIRST_WORDS_LIMIT_MS], // only the 30 s silence check can end it
+        gemini: scriptedGemini(request => (request.model === 'gemini-3.6-flash'
             ? stalledStream(['Half an ess'])
             : geminiText('A full essay.\nSentiment: Positive\nScore: 7'))),
     });
@@ -429,7 +463,7 @@ test('an essay that stops partway is given up after 30 s of silence and written 
 
     assert.notEqual(outcome, 'still stuck', 'the run waited forever for the rest of the essay');
     assert.equal(outcome.result.success, true);
-    assert.deepEqual(harness.geminiRequests.filter(isSentimentRequest).map(r => r.model), ['gemini-3.8-flash', 'gemini-3.6-flash']);
+    assert.deepEqual(harness.geminiRequests.filter(isSentimentRequest).map(r => r.model), ['gemini-3.6-flash', 'gemini-3.5-flash-lite']);
     assert.match(outcome.sentiment.details, /A full essay/);
     assert.doesNotMatch(outcome.sentiment.details, /Half an ess/);
 });
@@ -437,13 +471,13 @@ test('an essay that stops partway is given up after 30 s of silence and written 
 test('when the main model is too busy the next try uses the fallback model and the run finishes', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
-        gemini: request => (request.model === 'gemini-3.8-flash' ? overloaded() : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
+        gemini: request => (request.model === 'gemini-3.6-flash' ? overloaded() : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
     });
     const { result, sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
     assert.equal(result.success, true);
     assert.equal(sentiment.score, 7);
-    assert.ok(harness.geminiRequests.some(r => r.model === 'gemini-3.6-flash'), 'the fallback model was used');
+    assert.deepEqual(modelsFor(harness, isSentimentRequest), ['gemini-3.6-flash', 'gemini-3.5-flash-lite'], 'the fallback model was used');
 });
 
 const progressTexts = harness => harness.runtimeMessages.filter(m => m.action === 'analysisProgress').map(m => m.message);
@@ -451,23 +485,23 @@ const progressTexts = harness => harness.runtimeMessages.filter(m => m.action ==
 test('while Gemini is busy the panel names the busy model, the model it tries next and the try number', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
-        gemini: request => (request.model === 'gemini-3.8-flash' ? overloaded() : geminiText('A summary.')),
+        gemini: request => (request.model === 'gemini-3.6-flash' ? overloaded() : geminiText('A summary.')),
     });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
-    assert.ok(progressTexts(harness).includes('Gemini 3.8 Flash is busy. Trying again with Gemini 3.6 Flash (try 2 of 3)…'),
+    assert.ok(progressTexts(harness).includes('Gemini 3.6 Flash is busy. Trying again with Gemini 3.5 Flash Lite (try 2 of 3)…'),
         JSON.stringify(progressTexts(harness)));
 });
 
 test('when no other model is left, the busy message says which try comes next', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
-        models: [{ name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] }],
+        models: [{ name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['generateContent'] }],
         gemini: overloaded,
     });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
-    assert.ok(progressTexts(harness).includes('Gemini 3.8 Flash is busy. Trying again (try 3 of 3)…'),
+    assert.ok(progressTexts(harness).includes('Gemini 3.6 Flash is busy. Trying again (try 3 of 3)…'),
         JSON.stringify(progressTexts(harness)));
 });
 
@@ -751,7 +785,20 @@ const dailyLimitUsed = model => jsonResponse(429, errorBody(429, 'RESOURCE_EXHAU
 const modelsFor = (harness, which) => harness.geminiRequests.filter(which).map(request => request.model);
 const isSummaryRequest = request => !isSentimentRequest(request);
 
-test('the summary is written by Gemini 3.5 Flash-Lite and the essay by Gemini 3.8 Flash', async () => {
+test('Gemini 3.8 Flash is not used even when the key can use it: the essay goes to 3.6 Flash, then 3.5 Flash-Lite', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        models: WITH_LITE,
+        gemini: request => (isSentimentRequest(request) && request.model === 'gemini-3.6-flash' ? overloaded() : scriptedGemini(essayReply)(request)),
+    });
+    const { result } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(modelsFor(harness, isSentimentRequest), ['gemini-3.6-flash', 'gemini-3.5-flash-lite']);
+    assert.ok(!harness.geminiRequests.some(r => r.model === 'gemini-3.8-flash'), 'a request went to Gemini 3.8 Flash');
+});
+
+test('the summary is written by Gemini 3.5 Flash-Lite and the essay by Gemini 3.6 Flash', async () => {
     const harness = await loadBackground({ sync: { language: 'en' }, models: WITH_LITE });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
@@ -759,7 +806,7 @@ test('the summary is written by Gemini 3.5 Flash-Lite and the essay by Gemini 3.
     const essay = harness.geminiRequests.find(isSentimentRequest);
     assert.equal(summary.model, 'gemini-3.5-flash-lite');
     assert.equal(summary.body.generationConfig.thinkingConfig.thinkingLevel, 'LOW');
-    assert.equal(essay.model, 'gemini-3.8-flash');
+    assert.equal(essay.model, 'gemini-3.6-flash');
     assert.equal(essay.body.generationConfig.thinkingConfig.thinkingLevel, 'HIGH');
 });
 
@@ -771,7 +818,7 @@ test('when Flash-Lite is busy, the summary moves to a Flash model', async () => 
     });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
-    assert.deepEqual(modelsFor(harness, isSummaryRequest), ['gemini-3.5-flash-lite', 'gemini-3.8-flash']);
+    assert.deepEqual(modelsFor(harness, isSummaryRequest), ['gemini-3.5-flash-lite', 'gemini-3.6-flash']);
     assert.equal(harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary').data.summary, 'A summary.');
 });
 
@@ -784,23 +831,23 @@ test('a model that rejects the thinking setting is skipped and the summary moves
     });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
-    assert.deepEqual(modelsFor(harness, isSummaryRequest), ['gemini-3.5-flash-lite', 'gemini-3.8-flash']);
+    assert.deepEqual(modelsFor(harness, isSummaryRequest), ['gemini-3.5-flash-lite', 'gemini-3.6-flash']);
     assert.equal(harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary').data.summary, 'A summary.');
 });
 
-test('when Gemini 3.8 Flash has used up its daily requests, the essay moves to Gemini 3.6 Flash', async () => {
+test('when Gemini 3.6 Flash has used up its daily requests, the essay moves to Gemini 3.5 Flash-Lite', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
         models: WITH_LITE,
-        gemini: request => (isSentimentRequest(request) && request.model === 'gemini-3.8-flash'
+        gemini: request => (isSentimentRequest(request) && request.model === 'gemini-3.6-flash'
             ? dailyLimitUsed(request.model)
             : scriptedGemini(essayReply)(request)),
     });
     const { sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
     assert.equal(sentiment.score, 7);
-    assert.deepEqual(modelsFor(harness, isSentimentRequest), ['gemini-3.8-flash', 'gemini-3.6-flash']);
-    assert.ok(progressTexts(harness).includes("Gemini 3.8 Flash has reached today's free limit. Trying again with Gemini 3.6 Flash (try 2 of 3)…"),
+    assert.deepEqual(modelsFor(harness, isSentimentRequest), ['gemini-3.6-flash', 'gemini-3.5-flash-lite']);
+    assert.ok(progressTexts(harness).includes("Gemini 3.6 Flash has reached today's free limit. Trying again with Gemini 3.5 Flash Lite (try 2 of 3)…"),
         JSON.stringify(progressTexts(harness)));
 });
 
@@ -808,13 +855,13 @@ test("a used-up daily limit keeps the model skipped until Google's daily reset a
     const harness = await loadBackground({
         sync: { language: 'en' },
         models: WITH_LITE,
-        gemini: request => (isSentimentRequest(request) && request.model === 'gemini-3.8-flash'
+        gemini: request => (isSentimentRequest(request) && request.model === 'gemini-3.6-flash'
             ? dailyLimitUsed(request.model)
             : scriptedGemini(essayReply)(request)),
     });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
 
-    const until = harness.chrome.storage.local.data.modelCooldowns['gemini-3.8-flash'];
+    const until = harness.chrome.storage.local.data.modelCooldowns['gemini-3.6-flash'];
     const pacificTime = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/Los_Angeles', hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
     }).format(until);
@@ -826,26 +873,26 @@ test('a model that was busy is skipped by later runs for 10 minutes, even after 
     const first = await loadBackground({
         sync: { language: 'en' },
         models: WITH_LITE,
-        gemini: request => (request.model === 'gemini-3.8-flash' ? overloaded() : scriptedGemini(essayReply)(request)),
+        gemini: request => (request.model === 'gemini-3.6-flash' ? overloaded() : scriptedGemini(essayReply)(request)),
     });
     await runFullAnalysis(first, { comments: polarizedTopic(), settings: manual10 });
     const cooldowns = first.chrome.storage.local.data.modelCooldowns;
-    assert.ok(cooldowns['gemini-3.8-flash'] > Date.now() + 9 * 60_000);
-    assert.ok(cooldowns['gemini-3.8-flash'] <= Date.now() + 10 * 60_000);
+    assert.ok(cooldowns['gemini-3.6-flash'] > Date.now() + 9 * 60_000);
+    assert.ok(cooldowns['gemini-3.6-flash'] <= Date.now() + 10 * 60_000);
 
     const second = await loadBackground({ sync: { language: 'en' }, models: WITH_LITE, local: { modelCooldowns: cooldowns } });
     await runFullAnalysis(second, { comments: polarizedTopic(), settings: manual10 });
-    assert.deepEqual(modelsFor(second, isSentimentRequest), ['gemini-3.6-flash']);
+    assert.deepEqual(modelsFor(second, isSentimentRequest), ['gemini-3.5-flash-lite']);
 });
 
 test('a model is tried again once its wait is over', async () => {
     const harness = await loadBackground({
         sync: { language: 'en' },
         models: WITH_LITE,
-        local: { modelCooldowns: { 'gemini-3.8-flash': Date.now() - 1 } },
+        local: { modelCooldowns: { 'gemini-3.6-flash': Date.now() - 1 } },
     });
     await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
-    assert.deepEqual(modelsFor(harness, isSentimentRequest), ['gemini-3.8-flash']);
+    assert.deepEqual(modelsFor(harness, isSentimentRequest), ['gemini-3.6-flash']);
 });
 
 // ---------------------------------------------------------------- error cards
