@@ -11,8 +11,8 @@ const {
     runFullAnalysis,
     sentimentSample,
     stalledStream,
-} = require('./test-support/background-harness.js');
-const en = require('./_locales/en/messages.json');
+} = require('./support/background-harness.js');
+const en = require('../_locales/en/messages.json');
 
 // 5 heavily upvoted, 5 heavily downvoted and 30 low-engagement comments.
 function polarizedTopic() {
@@ -719,7 +719,7 @@ test('the summary uses low thinking and the essay the deepest', async () => {
 });
 
 test('the page reader no longer says "Extraction complete. Analyzing..." while Gemini is still working', () => {
-    const contentScript = require('node:fs').readFileSync(require('node:path').join(__dirname, 'content.js'), 'utf8');
+    const contentScript = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'content.js'), 'utf8');
     assert.ok(!contentScript.includes('progressExtractionComplete'));
 });
 
@@ -940,7 +940,7 @@ test('a rate limit that does not clear marks the sentiment result as rate limite
 // ---------------------------------------------------------------- panel lifetime
 
 test('closing the side panel cancels the running analysis', async () => {
-    const { chromeEvent } = require('./test-support/background-harness.js');
+    const { chromeEvent } = require('./support/background-harness.js');
     const port = { name: 'analysis:test-run', onDisconnect: chromeEvent() };
     const harness = await loadBackground({
         sync: { language: 'en' },

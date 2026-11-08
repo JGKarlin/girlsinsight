@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ROOT = __dirname;
+const ROOT = path.join(__dirname, '..');
 
 function element({ text = '', attrs = {}, href, children = {} } = {}) {
     const node = {

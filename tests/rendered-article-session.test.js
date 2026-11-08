@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const {
     RenderedArticleSession,
     probeHttpStatus,
-} = require('./rendered-article-session.js');
+} = require('../rendered-article-session.js');
 
 function chromeEvent() {
     const listeners = new Set();
@@ -290,7 +290,7 @@ test('a page that never loads and has no article text still reports a timeout', 
 // returns `readabilityText`, and the page has one <article> holding `articleText`.
 function extractFrom({ readabilityText, articleText }) {
     const vm = require('node:vm');
-    const { extractRenderedArticlePage } = require('./rendered-article-session.js');
+    const { extractRenderedArticlePage } = require('../rendered-article-session.js');
     const element = text => ({
         innerText: text,
         textContent: text,

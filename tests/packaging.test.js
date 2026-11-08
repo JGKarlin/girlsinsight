@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
 
 // Every file the extension loads at run time.
 function filesTheExtensionLoads() {
@@ -19,9 +19,9 @@ function filesTheExtensionLoads() {
         '_locales/en/messages.json',
         'lib/Readability.js', // injected into article tabs by rendered-article-session.js
     ]);
-    const popupHtml = fs.readFileSync(path.join(__dirname, manifest.side_panel.default_path), 'utf8');
+    const popupHtml = fs.readFileSync(path.join(__dirname, '..', manifest.side_panel.default_path), 'utf8');
     for (const [, src] of popupHtml.matchAll(/<(?:script|link)[^>]+(?:src|href)="([^":]+)"/g)) files.add(src);
-    const background = fs.readFileSync(path.join(__dirname, manifest.background.service_worker), 'utf8');
+    const background = fs.readFileSync(path.join(__dirname, '..', manifest.background.service_worker), 'utf8');
     for (const [, args] of background.matchAll(/importScripts\(([^)]*)\)/g)) {
         for (const [, file] of args.matchAll(/'([^']+)'/g)) files.add(file);
     }
@@ -29,7 +29,7 @@ function filesTheExtensionLoads() {
 }
 
 test('the manifest targets only the live GirlsChannel host', () => {
-    const { GIRLSCHANNEL_HOME_URL } = require('./girlschannel-parsing.js');
+    const { GIRLSCHANNEL_HOME_URL } = require('../girlschannel-parsing.js');
     const liveHost = new URL(GIRLSCHANNEL_HOME_URL).hostname;
     const patterns = [
         ...manifest.host_permissions,
@@ -42,7 +42,7 @@ test('the manifest targets only the live GirlsChannel host', () => {
 
 test('the Web Store package contains every file the extension loads and no tests', () => {
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'girlsinsight-package-'));
-    execFileSync('sh', [path.join(__dirname, 'scripts', 'package.sh')], { env: { ...process.env, OUT_DIR: outDir } });
+    execFileSync('sh', [path.join(__dirname, '..', 'scripts', 'package.sh')], { env: { ...process.env, OUT_DIR: outDir } });
 
     const zipPath = path.join(outDir, `girlsinsight-${manifest.version}.zip`);
     const entries = execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8' }).split('\n').filter(Boolean);
@@ -50,13 +50,13 @@ test('the Web Store package contains every file the extension loads and no tests
     for (const file of filesTheExtensionLoads()) {
         assert.ok(entries.includes(file), `package is missing ${file}`);
     }
-    assert.deepEqual(entries.filter(entry => /\.test\.js$|^test-support\/|^scripts\/|^\.github\//.test(entry)), []);
+    assert.deepEqual(entries.filter(entry => /^tests\/|\.test\.js$|^scripts\/|^\.github\//.test(entry)), []);
 });
 
 // ---------------------------------------------------------------- API key guide
 
-const popupHtml = fs.readFileSync(path.join(__dirname, 'popup.html'), 'utf8');
-const guideLocales = ['en', 'ja'].map(locale => [locale, require(`./_locales/${locale}/messages.json`)]);
+const popupHtml = fs.readFileSync(path.join(__dirname, '..', 'popup.html'), 'utf8');
+const guideLocales = ['en', 'ja'].map(locale => [locale, require(`../_locales/${locale}/messages.json`)]);
 
 test('the API key guide shows every step that has text, in English and Japanese', () => {
     const shown = [...popupHtml.matchAll(/data-i18n="(modalStep\d+)"/g)].map(match => match[1]);

@@ -6,7 +6,7 @@ const {
     compareCommentNumbers,
     parseGirlsChannelDate,
     topicPageInfo,
-} = require('./girlschannel-parsing.js');
+} = require('../girlschannel-parsing.js');
 
 test('the "Go to GirlsChannel" link opens the site the extension recognizes', () => {
     // www.girlschannel.net no longer answers, and the extension only treats

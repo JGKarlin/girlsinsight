@@ -4,14 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const en = require('./_locales/en/messages.json');
+const en = require('../_locales/en/messages.json');
 const getMessage = key => en[key].message;
 
 // Loads popup.js without a page: its panel code waits for DOMContentLoaded,
 // which never fires here, so only the top-level helpers are defined.
 function popupHelpers() {
     const context = vm.createContext({ document: { addEventListener() {} }, chrome: {}, console });
-    vm.runInContext(fs.readFileSync(path.join(__dirname, 'popup.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8'), context);
     return context;
 }
 
@@ -31,7 +31,7 @@ test('an unexpected error with no message from the service worker gets the gener
 
 // ---------------------------------------------------------------- error card
 
-const ja = require('./_locales/ja/messages.json');
+const ja = require('../_locales/ja/messages.json');
 const strictMessages = messages => key => {
     assert.ok(messages[key], `missing message ${key}`);
     return messages[key].message;

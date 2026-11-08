@@ -314,12 +314,12 @@ There is no build step and no npm dependency. Edit the files, then click the rel
 node --test
 ```
 
-- `article-pipeline.test.js` and `rendered-article-session.test.js` cover article retrieval and the site permissions requested.
-- `girlschannel-parsing.test.js` covers topic page addresses, Japan-time dates and comment ordering.
-- `content.test.js` runs the real content script on a small fake topic page and checks that the main comments are sent before reply threads are fetched.
-- `background.test.js` loads the real service worker with Chrome APIs and Gemini replaced by fakes (see `test-support/background-harness.js`). It runs whole analyses and checks the sentiment sample and size, streaming, thinking notes, the Gemini request format, retries, the silence limit and error handling, model choice, saved results, settings storage and cancellation when the panel closes.
-- `popup-react.test.js` renders result components with the bundled React.
-- `packaging.test.js` builds the Web Store zip and checks it contains every file the extension loads and no test files.
+- `tests/article-pipeline.test.js` and `tests/rendered-article-session.test.js` cover article retrieval and the site permissions requested.
+- `tests/girlschannel-parsing.test.js` covers topic page addresses, Japan-time dates and comment ordering.
+- `tests/content.test.js` runs the real content script on a small fake topic page and checks that the main comments are sent before reply threads are fetched.
+- `tests/background.test.js` loads the real service worker with Chrome APIs and Gemini replaced by fakes (see `tests/support/background-harness.js`). It runs whole analyses and checks the sentiment sample and size, streaming, thinking notes, the Gemini request format, retries, the silence limit and error handling, model choice, saved results, settings storage and cancellation when the panel closes.
+- `tests/popup-react.test.js` renders result components with the bundled React.
+- `tests/packaging.test.js` builds the Web Store zip and checks it contains every file the extension loads and no test files.
 
 GitHub Actions runs the suite on every push and pull request (`.github/workflows/test.yml`).
 

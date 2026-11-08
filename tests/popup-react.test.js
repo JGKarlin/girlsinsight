@@ -11,7 +11,7 @@ function loadComponents() {
     const context = vm.createContext({ console });
     context.self = context; // React's UMD wrapper attaches to `self` outside CommonJS
     for (const file of ['lib/react.production.min.js', 'popup-react.js']) {
-        vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context, { filename: file });
+        vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context, { filename: file });
     }
     return {
         CommentItem: vm.runInContext('CommentItem', context),

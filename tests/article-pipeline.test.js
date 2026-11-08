@@ -7,7 +7,7 @@ const {
     buildArticleExcerpt,
     collectArticleCandidates,
     createSourceReference,
-} = require('./article-pipeline.js');
+} = require('../article-pipeline.js');
 
 test('article access is requested only for the linked sites plus the Wayback Machine', () => {
     const origins = articleAccessOrigins([
