@@ -15,6 +15,10 @@ A Chrome extension for analyzing GirlsChannel topics with AI-powered sentiment a
 
 ## Installation
 
+**Recommended:** install GirlsinSight from the [Chrome Web Store](https://chromewebstore.google.com/detail/girlsinsight/bbfnanleibeenpgheblpplenipaeamkp), then follow [Setup](#setup) to add your Gemini API key.
+
+To load it from source instead:
+
 ### Prerequisites
 - Google Chrome browser
 - Google Gemini API key (get from [Google AI Studio](https://makersuite.google.com/app/apikey))
