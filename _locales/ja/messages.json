@@ -310,6 +310,9 @@
     "rateLimited": {
         "message": "Geminiの利用制限に達しました。1分ほど待ってから、もう一度お試しください。"
     },
+    "progressSummaryAndSentiment": {
+        "message": "AIで概要と感情分析を処理中..."
+    },
     "geminiBusy": {
         "message": "Geminiが混み合っていて応答できません。混雑時は無料枠のリクエストから先に断られます。数分後にもう一度お試しください。"
     },

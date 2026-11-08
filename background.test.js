@@ -592,6 +592,30 @@ test('while the essay is being written the status line says so, even after the s
     assert.equal(whileWriting.at(-1), en.progressSendingSentimentRequest.message, JSON.stringify(whileWriting));
 });
 
+test('while the summary and the essay are both running, the status line names both', async () => {
+    let releaseSummary = null;
+    let releaseEssay = null;
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => new Promise(resolve => {
+            const answer = () => resolve(isSentimentRequest(request)
+                ? geminiText('An essay.\nSentiment: Positive\nScore: 7')
+                : geminiText('A summary.'));
+            if (isSentimentRequest(request)) releaseEssay = answer;
+            else releaseSummary = answer;
+        }),
+    });
+    const run = runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+    await until(() => releaseSummary && releaseEssay);
+    const status = harness.runtimeMessages.filter(m => m.action === 'analysisProgress').at(-1).message;
+    releaseSummary();
+    releaseEssay();
+    await run;
+
+    assert.equal(status, en.progressSummaryAndSentiment && en.progressSummaryAndSentiment.message);
+    assert.equal(status, 'Processing the summary and sentiment analysis...');
+});
+
 test('when the essay is done first, the status line says the summary is still on its way', async () => {
     let releaseSummary = null;
     const harness = await loadBackground({

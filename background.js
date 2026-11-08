@@ -604,11 +604,13 @@ class GirlsinSightBackground {
             
             // The summary (article reading, then Gemini) and the essay (all
             // comments, then Gemini) need different inputs, so they run side by
-            // side. There is one status line: it shows the step still running,
-            // the essay first since it takes longest.
+            // side. There is one status line: it names whichever steps are
+            // still running.
             const running = { summary: true, sentiment: false };
             const showRunningStep = () => {
-                if (running.sentiment) {
+                if (running.summary && running.sentiment) {
+                    this.sendProgress(i18n.getMessage('progressSummaryAndSentiment'), analysisId);
+                } else if (running.sentiment) {
                     this.sendProgress(i18n.getMessage('progressSendingSentimentRequest'), analysisId);
                 } else if (running.summary) {
                     this.sendProgress(i18n.getMessage('progressSendingSummaryRequest'), analysisId);
