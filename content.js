@@ -1,6 +1,10 @@
 // Content script for GirlsChannel pages - With sub-comment extraction
 (function() {
     'use strict';
+    // Loaded first by the manifest's content_scripts list.
+    const { compareCommentNumbers, parseGirlsChannelDate, topicPageInfo } = globalThis.GirlsinSightParsing;
+    const DEBUG = false; // true logs routine activity to the page console
+    const debugLog = (...args) => { if (DEBUG) console.log(...args); };
     let activeAnalysisId = null;
     const cancelledAnalysisIds = new Set();
     
@@ -16,7 +20,7 @@
                 sendResponse({ success: true, cancelled: true });
                 return false;
             case 'refreshTopicInfo':
-                scrapeAndStoreTopicInfo().then(() => sendResponse({ success: true }));
+                scrapeAndStoreTopicInfo({ fetchFirstPage: true }).then(() => sendResponse({ success: true }));
                 return true;
             case 'ping':
                 sendResponse({ ready: true });
@@ -26,8 +30,7 @@
 
     // --- Main Logic ---
     // Check if we are on a topic page and scrape info automatically
-    const topicUrlPattern = /girlschannel\.net\/topics\/\d+\//;
-    if (topicUrlPattern.test(window.location.href)) {
+    if (topicPageInfo(window.location.href)) {
         scrapeAndStoreTopicInfo();
     }
     
@@ -126,10 +129,10 @@
         console.log("Please copy the text from '--- Starting Page Structure Debug ---' to '--- Debug Finished ---' and paste it back to the assistant.");
     };
     
-    // Get topic post date from first comment
-    function getTopicDate() {
+    // Get topic post date from the first comment of a topic's first page
+    function getTopicDate(doc = document) {
         // The first comment is the actual topic post
-        const firstComment = document.querySelector('.comment-item');
+        const firstComment = doc.querySelector('.comment-item');
         if (firstComment) {
             const dateElement = firstComment.querySelector('a[rel="nofollow"]');
             if (dateElement) {
@@ -141,24 +144,39 @@
         return null;
     }
     
-    // Scrape topic info and store it in local storage
-    async function scrapeAndStoreTopicInfo() {
+    // Scrape topic info and store it in local storage. Only page 1 starts with
+    // the topic post (its date and article links). On later pages that page is
+    // fetched only when the side panel asks (fetchFirstPage), so simply reading
+    // a page never makes extra requests.
+    async function scrapeAndStoreTopicInfo({ fetchFirstPage = false } = {}) {
         try {
             const title = getTopicTitle();
             const commentCount = getCommentCount();
             const url = window.location.href;
-            const postDate = getTopicDate();
-            
+            const pageInfo = topicPageInfo(url);
+            let firstPageDoc = pageInfo && pageInfo.page === 1 ? document : null;
+            if (!firstPageDoc && pageInfo && fetchFirstPage) {
+                try {
+                    const html = await fetchPage(pageInfo.firstPageUrl);
+                    firstPageDoc = new DOMParser().parseFromString(html, 'text/html');
+                } catch (error) {
+                    console.warn('GirlsinSight: could not read the topic\'s first page:', error);
+                }
+            }
+            const topicPost = firstPageDoc && firstPageDoc.querySelector('.comment-item');
+
             const topicInfo = {
                 title,
                 commentCount,
                 url,
-                postDate,
+                postDate: firstPageDoc ? getTopicDate(firstPageDoc) : null,
+                // Links in the topic post; the panel asks for access to these sites.
+                articleUrls: topicPost ? extractCommentData(topicPost).urls : null,
                 timestamp: new Date().getTime()
             };
 
             await chrome.storage.local.set({ currentTopicInfo: topicInfo });
-            console.log('GirlsinSight: Topic info scraped and stored.', topicInfo);
+            debugLog('GirlsinSight: Topic info scraped and stored.', topicInfo);
 
             // Ask the background script for the translated message
             chrome.runtime.sendMessage({
@@ -216,15 +234,24 @@
         activeAnalysisId = analysisId;
         cancelledAnalysisIds.delete(analysisId);
         try {
+            // Analysis always starts from the topic's first page, which holds
+            // the topic post, even when the user is reading a later page.
+            const pageInfo = topicPageInfo(window.location.href);
+            let firstPageDoc = document;
+            if (pageInfo && pageInfo.page > 1) {
+                const html = await fetchPage(pageInfo.firstPageUrl, analysisId);
+                firstPageDoc = new DOMParser().parseFromString(html, 'text/html');
+            }
+
             // --- Phase 1: Immediately extract and send initial data ---
             const topicData = {
                 title: getTopicTitle(),
-                url: window.location.href,
-                postDate: getTopicDate()
+                url: pageInfo ? pageInfo.firstPageUrl : window.location.href,
+                postDate: getTopicDate(firstPageDoc)
             };
-            
+
             const firstCommentData = [];
-            const firstCommentElement = document.querySelector('.comment-item');
+            const firstCommentElement = firstPageDoc.querySelector('.comment-item');
             if (firstCommentElement) {
                 const comment = extractCommentData(firstCommentElement);
                 if (comment && comment.text) {
@@ -250,7 +277,8 @@
             const comments = await extractCommentsFromAllPages(
                 options.scrapeReplies,
                 totalComments,
-                analysisId
+                analysisId,
+                firstPageDoc
             );
 
             if (isAnalysisCancelled(analysisId)) {
@@ -289,12 +317,12 @@
     }
     
     // Extract comments from all pages using concurrent reply fetching
-    async function extractCommentsFromAllPages(scrapeReplies = false, totalMainComments = 'N/A', analysisId = null) {
+    async function extractCommentsFromAllPages(scrapeReplies = false, totalMainComments = 'N/A', analysisId = null, startDoc = document) {
         const allComments = [];
         const replyUrlMap = new Map(); // To store parentNumber for each reply URL
 
         // --- Step 1: Sequentially scrape main pages and gather all main comments and reply URLs ---
-        let doc = document;
+        let doc = startDoc;
         let currentPage = 1;
 
         while (true) {
@@ -383,7 +411,7 @@
         const finalComments = allComments.concat(allReplies);
         const uniqueComments = Array.from(new Map(finalComments.map(c => [c.number, c])).values());
         
-        uniqueComments.sort((a, b) => parseFloat(a.number) - parseFloat(b.number));
+        uniqueComments.sort((a, b) => compareCommentNumbers(a.number, b.number));
 
         return uniqueComments;
     }
@@ -441,7 +469,7 @@
         let rawDate = 'N/A';
         if (dateElement) {
             rawDate = dateElement.textContent.replace(/\(.*?\)/g, '').trim();
-            const parsedDate = parseJapaneseDate(rawDate);
+            const parsedDate = parseGirlsChannelDate(rawDate);
             if (parsedDate) {
                 date = parsedDate.toISOString();
             }
@@ -541,41 +569,6 @@
         return { score: 1, labelKey: 'activityInactive', counts };
     }
 
-    // Helper function to parse Japanese date strings
-    function parseJapaneseDate(dateString) {
-        // Try multiple formats, most specific first
-        let parts;
-
-        // Format 1: YYYY/MM/DD(Day) HH:MM:SS  (e.g., "2025/07/17(木) 12:03:46")
-        parts = dateString.match(/(\d{4})\/(\d{2})\/(\d{2})\(.\)\s(\d{2}):(\d{2}):(\d{2})/);
-        if (parts) {
-            // Month is 0-indexed in JS Date, so subtract 1
-            return new Date(parts[1], parts[2] - 1, parts[3], parts[4], parts[5], parts[6]);
-        }
-
-        // Format 2: YYYY.MM.DD HH:MM
-        parts = dateString.match(/(\d{4})\.(\d{2})\.(\d{2})\s(\d{2}):(\d{2})/);
-        if (parts) {
-            // Month is 0-indexed in JS Date, so subtract 1
-            return new Date(parts[1], parts[2] - 1, parts[3], parts[4], parts[5]);
-        }
-
-        // Format 3: YYYY/MM/DD HH:MM
-        parts = dateString.match(/(\d{4})\/(\d{2})\/(\d{2})\s(\d{2}):(\d{2})/);
-        if (parts) {
-            return new Date(parts[1], parts[2] - 1, parts[3], parts[4], parts[5]);
-        }
-
-        // Format 4: YYYY年MM月DD日 HH:MM
-        parts = dateString.match(/(\d{4})年(\d{2})月(\d{2})日\s(\d{2}):(\d{2})/);
-        if (parts) {
-            return new Date(parts[1], parts[2] - 1, parts[3], parts[4], parts[5]);
-        }
-        
-        // Fallback for unexpected formats
-        return null;
-    }
-
     // Get next page URL from any document
     function getNextPageUrlFromDocument(doc) {
         const nextLink = doc.querySelector('.pager-topic .next a');
@@ -628,5 +621,5 @@
         return new Promise(resolve => setTimeout(resolve, ms));
     }
     
-    console.log('GirlsinSight content script loaded and logic initiated.');
+    debugLog('GirlsinSight content script loaded and logic initiated.');
 })();

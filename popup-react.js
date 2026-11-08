@@ -40,10 +40,15 @@ const AnalysisResults = ({ i18n }) => {
                         setLoading(prev => ({ ...prev, summary: false }));
                         break;
                         
+                    case 'sentimentDraft':
+                        setResults(prev => ({ ...prev, sentimentDraft: data.text }));
+                        break;
+
                     case 'sentiment':
-                        setResults(prev => ({ 
-                            ...prev, 
-                            sentiment: data.sentiment 
+                        setResults(prev => ({
+                            ...prev,
+                            sentiment: data.sentiment,
+                            sentimentDraft: null
                         }));
                         setLoading(prev => ({ ...prev, sentiment: false }));
                         break;
@@ -122,6 +127,7 @@ const AnalysisResults = ({ i18n }) => {
         }),
         React.createElement(SentimentSection, {
             sentiment: results.sentiment,
+            draft: results.sentimentDraft,
             loading: loading.sentiment,
             i18n: i18n
         }),
@@ -195,19 +201,22 @@ const SummarySection = ({ summary, source, sourceDetails, loading, i18n }) => {
     );
 };
 
-// Sentiment Section Component
-const SentimentSection = ({ sentiment, loading, i18n }) => {
-    const scorePercent = ((sentiment?.score || 5) / 10) * 100;
+// Sentiment Section Component. `draft` is the essay text streamed so far.
+const SentimentSection = ({ sentiment, draft, loading, i18n }) => {
     const isLoading = loading || !sentiment;
+    // A failed or unfinished analysis has no score; 0 is a real score.
+    const hasScore = typeof sentiment?.score === 'number';
+    const scorePercent = hasScore ? sentiment.score * 10 : 0;
+    const showDraft = isLoading && Boolean(draft);
 
     return React.createElement('div', { className: 'sentiment-section' },
         React.createElement('h3', { className: 'section-title' }, i18n('sentimentTitle')),
         React.createElement('div', { className: 'sentiment-overview sentiment-' + (sentiment?.label || 'neutral') },
             React.createElement('div', { className: 'sentiment-score' },
                 React.createElement('div', { className: 'score-label' }, i18n('overallScoreLabel')),
-                React.createElement('div', { 
-                    className: isLoading ? 'score-value pulsating' : 'score-value' 
-                }, isLoading ? '?' : sentiment?.score || '-'),
+                React.createElement('div', {
+                    className: isLoading ? 'score-value pulsating' : 'score-value'
+                }, isLoading ? '?' : hasScore ? String(sentiment.score) : '-'),
                 React.createElement('div', { className: 'score-bar' },
                     React.createElement('div', { 
                         className: 'score-fill', 
@@ -223,9 +232,11 @@ const SentimentSection = ({ sentiment, loading, i18n }) => {
                     className: 'sentiment-label ' + (sentiment?.label || 'neutral') 
                 }, sentiment?.label ? i18n('sentiment' + sentiment.label.charAt(0).toUpperCase() + sentiment.label.slice(1)) : '')
         ),
-        React.createElement('div', { 
-            className: isLoading ? 'sentiment-details result-box loading-skeleton' : 'sentiment-details result-box' 
+        React.createElement('div', {
+            className: isLoading && !showDraft ? 'sentiment-details result-box loading-skeleton' : 'sentiment-details result-box'
         },
+            showDraft ?
+                React.createElement('div', { style: { whiteSpace: 'pre-wrap' } }, draft) :
             isLoading ? [
                 React.createElement('div', { key: 1, className: 'skeleton-line', style: { width: '95%' } }),
                 React.createElement('div', { key: 2, className: 'skeleton-line', style: { width: '88%' } }),
@@ -344,8 +355,11 @@ const CommentItem = ({ comment }) => {
     return React.createElement('div', { className: 'comment-item' },
         contentHtml,
         React.createElement('div', { className: 'comment-meta' },
-            React.createElement('span', { className: 'comment-date' }, 
-                new Date(comment.date).toLocaleDateString()
+            // new Date(null) would show 1970, so an undated comment shows no date.
+            React.createElement('span', { className: 'comment-date' },
+                comment.date && !Number.isNaN(new Date(comment.date).getTime())
+                    ? new Date(comment.date).toLocaleDateString()
+                    : ''
             ),
             React.createElement('div', { className: 'comment-score' },
                 React.createElement('span', { className: 'score-badge' }, '+' + comment.plus),

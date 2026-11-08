@@ -2,7 +2,7 @@
 // Only the parts that cannot run outside Chrome are faked: the chrome.* APIs
 // and network fetches (locale files are served from disk; Gemini is scripted
 // per test). Timers run with zero delay so retry back-off and the post-summary
-// pause do not slow the suite down.
+// pause do not slow the suite down; requested delays are recorded instead.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -21,7 +21,7 @@ function chromeEvent() {
     };
 }
 
-function storageArea(initial = {}) {
+function storageArea(initial = {}, { quotaBytes = Infinity } = {}) {
     const data = { ...initial };
     return {
         data,
@@ -33,46 +33,100 @@ function storageArea(initial = {}) {
             for (const key of list) if (key in data) result[key] = data[key];
             return result;
         },
-        async set(items) { Object.assign(data, items); },
+        async set(items) {
+            const next = { ...data, ...items };
+            if (JSON.stringify(next).length > quotaBytes) {
+                throw new Error('QUOTA_BYTES quota exceeded');
+            }
+            Object.assign(data, items);
+        },
         async remove(keys) { for (const key of [].concat(keys)) delete data[key]; },
     };
 }
 
+// A ReadableStream body in Server-Sent Events form, as streamGenerateContent
+// sends it (`data: {json}` events separated by blank lines).
+function sseBody(chunks) {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+        start(controller) {
+            for (const chunk of chunks) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\r\n\r\n`));
+            }
+            controller.close();
+        },
+    });
+}
+
 function jsonResponse(status, body) {
     const text = JSON.stringify(body);
+    const ok = status >= 200 && status < 300;
     return {
-        ok: status >= 200 && status < 300,
+        ok,
         status,
         statusText: String(status),
         json: async () => JSON.parse(text),
         text: async () => text,
+        // A successful reply also works for a streaming request, as one event.
+        body: ok ? sseBody([body]) : null,
     };
 }
 
-function geminiText(text) {
+function geminiText(text, finishReason = 'STOP') {
     return jsonResponse(200, {
-        candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason: 'STOP' }],
+        candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason }],
     });
 }
+
+/** A streamed reply: each string is one SSE event; the last carries finishReason. */
+function geminiStream(pieces, finishReason = 'STOP') {
+    const chunks = pieces.map((text, index) => ({
+        candidates: [{
+            content: { parts: [{ text }], role: 'model' },
+            ...(index === pieces.length - 1 ? { finishReason } : {}),
+        }],
+    }));
+    return { ok: true, status: 200, statusText: '200', body: sseBody(chunks), text: async () => '', json: async () => chunks[0] };
+}
+
+const DEFAULT_MODELS = [
+    { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+    { name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+];
 
 /**
  * @param {object} options
  * @param {object} [options.sync]   initial chrome.storage.sync contents
- * @param {(request: {model: string, prompt: string}) => object} [options.gemini]
- *        returns a fetch-style response for each generateContent call
+ * @param {object} [options.local]  initial chrome.storage.local contents
+ * @param {number} [options.localQuota] byte limit for chrome.storage.local
+ * @param {Array}  [options.models] models returned by GET /v1beta/models
+ * @param {(request) => object} [options.gemini]
+ *        returns a fetch-style response for each generate call
  */
-async function loadBackground({ sync = {}, gemini = () => geminiText('ok') } = {}) {
+async function loadBackground({
+    sync = {},
+    local = {},
+    localQuota = Infinity,
+    models = DEFAULT_MODELS,
+    gemini = () => geminiText('ok'),
+} = {}) {
     const runtimeMessages = [];
     const geminiRequests = [];
-    const fastTimeout = (callback, _ms, ...args) => setTimeout(callback, 0, ...args);
+    const modelListRequests = [];
+    const timerDelays = [];
+    const fastTimeout = (callback, ms, ...args) => {
+        timerDelays.push(ms);
+        return setTimeout(callback, 0, ...args);
+    };
 
     const chrome = {
-        storage: { sync: storageArea(sync), local: storageArea() },
+        storage: { sync: storageArea(sync), local: storageArea(local, { quotaBytes: localQuota }) },
         runtime: {
             getURL: relativePath => relativePath,
             onMessage: chromeEvent(),
             onInstalled: chromeEvent(),
             onStartup: chromeEvent(),
+            onConnect: chromeEvent(),
             sendMessage: async message => { runtimeMessages.push(message); },
             getPlatformInfo: async () => ({ os: 'mac' }),
             lastError: undefined,
@@ -100,36 +154,52 @@ async function loadBackground({ sync = {}, gemini = () => geminiText('ok') } = {
         if (url.startsWith('_locales/')) {
             return jsonResponse(200, JSON.parse(fs.readFileSync(path.join(ROOT, url), 'utf8')));
         }
-        if (/\/v1beta\/models\?key=/.test(url)) {
-            return jsonResponse(200, { models: [] });
+        if (/\/v1beta\/models(\?|$)/.test(url)) {
+            modelListRequests.push({ url, headers: init.headers || {} });
+            return jsonResponse(200, { models });
         }
-        const match = url.match(/\/v1beta\/models\/([^:]+):generateContent/);
+        const match = url.match(/\/v1beta\/models\/([^:]+):(generateContent|streamGenerateContent)/);
         if (match) {
             const body = JSON.parse(init.body);
-            const request = { model: match[1], prompt: body.contents[0].parts[0].text, body };
+            const request = {
+                model: match[1],
+                streaming: match[2] === 'streamGenerateContent',
+                prompt: body.contents[0].parts[0].text,
+                body,
+                url,
+                headers: init.headers || {},
+                signal: init.signal,
+            };
             geminiRequests.push(request);
             return gemini(request);
         }
         throw new Error(`Unexpected fetch in test: ${url}`);
     }
 
-    const silent = { log() {}, warn() {}, error() {}, info() {} };
+    // console.log calls are recorded (verbose logging is gated by DEBUG_MODE);
+    // warnings and errors are silenced.
+    const consoleLogs = [];
+    const silent = { log: (...args) => consoleLogs.push(args), warn() {}, error() {}, info() {} };
     const context = vm.createContext({
         chrome,
         console: silent,
         fetch: fakeFetch,
         setTimeout: fastTimeout,
         clearTimeout,
-        setInterval,
+        // The keep-alive interval must not hold the test process open if a
+        // test leaves an analysis running.
+        setInterval: (...args) => { const timer = setInterval(...args); timer.unref(); return timer; },
         clearInterval,
         crypto: globalThis.crypto,
         URL,
         AbortController,
+        TextDecoder,
+        Date,
     });
     context.globalThis = context;
     context.importScripts = (...files) => {
         for (const file of files) {
-            if (file.includes('xlsx')) continue; // Excel export is not under test here
+            if (file.includes('xlsx')) continue; // Excel workbook writing is not under test here
             vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), context, { filename: file });
         }
     };
@@ -143,7 +213,7 @@ async function loadBackground({ sync = {}, gemini = () => geminiText('ok') } = {
     const background = vm.runInContext('new GirlsinSightBackground()', context);
     await new Promise(resolve => setTimeout(resolve, 0)); // let initialize() settle
 
-    return { background, chrome, runtimeMessages, geminiRequests };
+    return { background, chrome, runtimeMessages, geminiRequests, modelListRequests, timerDelays, consoleLogs };
 }
 
 /**
@@ -151,7 +221,7 @@ async function loadBackground({ sync = {}, gemini = () => geminiText('ok') } = {
  * for the content script: it answers startPhasedExtraction by delivering the
  * opening post and then the given comments through the real message handler.
  */
-async function runFullAnalysis(harness, { comments, settings }) {
+async function runFullAnalysis(harness, { comments, settings, analysisId = 'test-run' }) {
     const { background, chrome } = harness;
     const tabId = 7;
     chrome.tabs.sendMessage = async (targetTab, message) => {
@@ -180,14 +250,21 @@ async function runFullAnalysis(harness, { comments, settings }) {
 
     const result = await background.startFullAnalysis({
         tabId,
-        analysisId: 'test-run',
+        analysisId,
         settings: { geminiApiKey: 'test-key', language: 'en', commentsToDisplay: 5, ...settings },
         articleAccessGranted: false,
     });
-    const statsMessage = harness.runtimeMessages.find(
-        message => message.action === 'partialResults' && message.type === 'stats'
+    const partial = type => harness.runtimeMessages.filter(
+        message => message.action === 'partialResults' && message.type === type
     );
-    return { result, stats: statsMessage && statsMessage.data.stats };
+    const statsMessage = partial('stats')[0];
+    const sentimentMessage = partial('sentiment')[0];
+    return {
+        result,
+        stats: statsMessage && statsMessage.data.stats,
+        sentiment: sentimentMessage && sentimentMessage.data.sentiment,
+        drafts: partial('sentimentDraft').map(message => message.data.text),
+    };
 }
 
 /** Splits the sentiment prompt into the comment texts sent in each list. */
@@ -207,10 +284,12 @@ function comment(number, text, plus, minus, extra = {}) {
 }
 
 module.exports = {
+    chromeEvent,
+    comment,
+    geminiStream,
     geminiText,
     jsonResponse,
     loadBackground,
     runFullAnalysis,
     sentimentSample,
-    comment,
 };

@@ -1,7 +1,7 @@
 // Background script for GirlsinSight Chrome extension - Updated with better error handling
 try {
     importScripts('lib/xlsx.full.min.js');
-    importScripts('article-pipeline.js', 'rendered-article-session.js');
+    importScripts('article-pipeline.js', 'rendered-article-session.js', 'girlschannel-parsing.js');
 } catch (e) {
     console.error(e);
 }
@@ -12,12 +12,34 @@ const {
     collectArticleCandidates,
 } = globalThis.GirlsinSightArticlePipeline;
 const { RenderedArticleSession } = globalThis.GirlsinSightRenderedArticle;
+const { compareCommentNumbers } = globalThis.GirlsinSightParsing;
 
-const DEBUG_MODE = false; // Set to false to disable source detail reporting
+const DEBUG_MODE = false; // true shows article source details and verbose logs
+const debugLog = (...args) => { if (DEBUG_MODE) console.log(...args); };
 
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 // Google's recommended replacement for gemini-2.5-pro and gemini-2.5-flash,
 // which are deprecated and auto-route to other models from December 1, 2026.
 const GEMINI_MODEL = 'gemini-3.8-flash';
+// If a key cannot use GEMINI_MODEL, the newest stable "gemini-X.Y-flash" it can
+// use is chosen instead, as long as it accepts thinkingLevel (3.6 and newer).
+const MIN_FALLBACK_FLASH_VERSION = 306; // major * 100 + minor
+// Explicitly off for the current adjustable categories, so a change to
+// Google's defaults cannot start refusing ordinary forum threads.
+const SAFETY_SETTINGS = [
+    'HARM_CATEGORY_HARASSMENT',
+    'HARM_CATEGORY_HATE_SPEECH',
+    'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+    'HARM_CATEGORY_DANGEROUS_CONTENT',
+].map(category => ({ category, threshold: 'OFF' }));
+// Longest wait a rate-limit reply may ask for before we give up instead.
+const MAX_RETRY_WAIT_MS = 30_000;
+// How often streamed essay text is forwarded to the side panel.
+const DRAFT_INTERVAL_MS = 300;
+// Comments sent for sentiment analysis in manual mode, until the user picks a number.
+const DEFAULT_COMMENTS_TO_ANALYZE = 30;
+// Finished analyses kept in local storage, one per topic, newest first.
+const MAX_SAVED_ANALYSES = 5;
 
 const i18n = {
     messages: {},
@@ -32,7 +54,7 @@ const i18n = {
                 throw new Error(`Failed to fetch: ${response.statusText}`);
             }
             this.messages = await response.json();
-            console.log(`Localization loaded for: ${this.currentLang}`);
+            debugLog(`Localization loaded for: ${this.currentLang}`);
         } catch (error) {
             console.error(`Error initializing localization for ${this.currentLang}, falling back to English:`, error);
             try {
@@ -154,6 +176,19 @@ class GirlsinSightBackground {
         });
 
         chrome.contextMenus.onClicked.addListener(this.handleContextMenu.bind(this));
+
+        // The side panel holds a port named "analysis:<id>" open for each run.
+        // Chrome disconnects it when the panel closes or reloads; stop the run
+        // then so no one pays for Gemini output nobody will see.
+        chrome.runtime.onConnect.addListener(port => {
+            const match = /^analysis:(.+)$/.exec(port.name || '');
+            if (!match) return;
+            port.onDisconnect.addListener(() => {
+                if (this.analysisControllers.has(match[1])) {
+                    void this.abortAnalysis({ analysisId: match[1] });
+                }
+            });
+        });
     }
     
     // Create context menu with localized strings
@@ -172,7 +207,7 @@ class GirlsinSightBackground {
                 if (chrome.runtime.lastError) {
                     console.error('Error creating context menu:', chrome.runtime.lastError);
                 } else {
-                    console.log('Context menu created successfully with title:', menuTitle);
+                    debugLog('Context menu created successfully with title:', menuTitle);
                 }
             });
             
@@ -259,12 +294,12 @@ class GirlsinSightBackground {
     // browser updates; defaults are written only on a fresh install so updates
     // keep the user's settings.
     onInstalled(details = {}) {
-        console.log('GirlsinSight onInstalled:', details.reason);
+        debugLog('GirlsinSight onInstalled:', details.reason);
 
         if (details.reason === 'install') {
             chrome.storage.sync.set({
                 language: 'ja',
-                commentsToAnalyze: 30,
+                commentsToAnalyze: DEFAULT_COMMENTS_TO_ANALYZE,
                 scrapeReplies: false,
             });
         }
@@ -287,22 +322,38 @@ class GirlsinSightBackground {
         }
     }
     
-    // Load settings from storage
+    // Load settings from storage. Preferences sync across the user's browsers;
+    // the API key stays in local storage on this device only.
     async loadSettings() {
         try {
-            const result = await chrome.storage.sync.get([
-                'geminiApiKey',
-                'language',
-                'commentsToAnalyze',
-                'commentsToDisplay',
-                'scrapeReplies'
+            const [result, local] = await Promise.all([
+                chrome.storage.sync.get([
+                    'geminiApiKey',
+                    'language',
+                    'commentsToAnalyze',
+                    'commentsToDisplay',
+                    'autoCommentCalculation',
+                    'scrapeReplies'
+                ]),
+                chrome.storage.local.get('geminiApiKey'),
             ]);
-            
+
+            // Versions before 1.5 kept the key in sync storage; move it here.
+            let geminiApiKey = local.geminiApiKey || null;
+            if (result.geminiApiKey) {
+                if (!geminiApiKey) {
+                    geminiApiKey = result.geminiApiKey;
+                    await chrome.storage.local.set({ geminiApiKey });
+                }
+                await chrome.storage.sync.remove('geminiApiKey');
+            }
+
             this.settings = {
-                geminiApiKey: result.geminiApiKey || null,
+                geminiApiKey,
                 language: result.language || 'ja',
-                commentsToAnalyze: result.commentsToAnalyze || 30,
+                commentsToAnalyze: result.commentsToAnalyze || DEFAULT_COMMENTS_TO_ANALYZE,
                 commentsToDisplay: result.commentsToDisplay || 5,
+                autoCommentCalculation: result.autoCommentCalculation !== false,
                 scrapeReplies: result.scrapeReplies || false
             };
             return this.settings;
@@ -328,7 +379,7 @@ class GirlsinSightBackground {
         }
 
         if (this.isRequestInProgress && request.action !== 'extractionProgress' && request.action !== 'analysisProgress') {
-            console.log("Request already in progress. Ignoring new request.");
+            debugLog("Request already in progress. Ignoring new request.");
             sendResponse({ success: false, error: "Request in progress" });
             return;
         }
@@ -347,12 +398,6 @@ class GirlsinSightBackground {
                     sendResponse({ success: true });
                     break;
                     
-                case 'analyzeComments':
-                    this.keepAlive();
-                    const analysisResult = await this.analyzeComments(request.data);
-                    this.stopKeepAlive();
-                    sendResponse(analysisResult);
-                    break;
                     
                 case 'startFullAnalysis':
                     this.startFullAnalysis(request.data)
@@ -507,13 +552,13 @@ class GirlsinSightBackground {
         this.sendProgress(i18n.getMessage('progressValidatingApiKey') || 'Validating API key...', analysisId);
         const validationResult = await this.validateApiKey(settings.geminiApiKey, { signal });
         if (!validationResult.success) {
-            chrome.runtime.sendMessage({ 
-                action: 'analysisFailed', 
-                analysisId,
-                error: i18n.getMessage('apiKeyInvalid') 
-            });
-            return { success: false, error: i18n.getMessage('apiKeyInvalid') };
+            const error = validationResult.modelUnavailable
+                ? validationResult.error
+                : i18n.getMessage('apiKeyInvalid');
+            chrome.runtime.sendMessage({ action: 'analysisFailed', analysisId, error });
+            return { success: false, error };
         }
+        this.geminiModel = validationResult.model;
         
         // Setup promises to wait for data from content script
         let initialDataResolver, allCommentsResolver;
@@ -587,13 +632,13 @@ class GirlsinSightBackground {
             // Process comments once for all analyses
             const { comments: rawComments, activityStats } = allCommentsResponse.data;
             
-            console.log('startFullAnalysis - processing comments:', {
+            debugLog('startFullAnalysis - processing comments:', {
                 rawCommentsLength: rawComments.length,
                 firstRawComment: rawComments[0]
             });
             
             const processedComments = this.processComments(rawComments);
-            console.log('startFullAnalysis - after processing:', {
+            debugLog('startFullAnalysis - after processing:', {
                 processedCommentsLength: processedComments.length,
                 firstProcessedComment: processedComments[0],
                 hasUpvoteRatio: processedComments[0] && 'upvoteRatio' in processedComments[0]
@@ -614,15 +659,21 @@ class GirlsinSightBackground {
             this.currentAnalysisData.topComments = topComments;
             this.currentAnalysisData.bottomComments = bottomComments;
             this.currentAnalysisData.activityStats = activityStats; // Store it
-            
-            this.sendPartialResults('stats', { stats, topComments, bottomComments, activityStats, settings }, analysisId);
+            // Only the display settings the panel needs; never the API key.
+            const displaySettings = {
+                commentsToDisplay: settings.commentsToDisplay,
+                scrapeReplies: settings.scrapeReplies,
+            };
+            this.currentAnalysisData.settings = displaySettings;
+
+            this.sendPartialResults('stats', { stats, topComments, bottomComments, activityStats, settings: displaySettings }, analysisId);
             
             // --- Now, run the long sentiment analysis ---
             this.sendProgress(i18n.getMessage('progressWaitingForSentiment'), analysisId);
 
             const sentimentPromise = (async () => {
                 this.sendProgress(i18n.getMessage('progressSendingSentimentRequest'), analysisId);
-                const sentimentResult = await this.analyzeSentiment(processedComments, topicData, { signal });
+                const sentimentResult = await this.analyzeSentiment(processedComments, topicData, { signal, analysisId });
                 this.sendProgress(i18n.getMessage('progressSentimentReceived'), analysisId);
                 this.throwIfAborted(signal);
                 this.currentAnalysisData.sentiment = sentimentResult;
@@ -634,6 +685,7 @@ class GirlsinSightBackground {
             await sentimentPromise;
 
             this.sendProgress(i18n.getMessage('progressFinalizing'), analysisId);
+            await this.saveAnalysis(this.currentAnalysisData);
             this.throwIfAborted(signal);
             chrome.runtime.sendMessage({
                 action: 'analysisComplete',
@@ -663,24 +715,62 @@ class GirlsinSightBackground {
         }
     }
 
-    // Validate the Gemini API key
+    // Saves a finished analysis in local storage under its topic's page-1 URL so
+    // reopening the panel on that topic shows it again. The most recent
+    // MAX_SAVED_ANALYSES topics are kept; if storage is full, the oldest are
+    // dropped until the new one fits. Saving is best effort.
+    async saveAnalysis(analysis) {
+        if (!analysis || !analysis.url) return;
+        try {
+            const { savedAnalyses = [] } = await chrome.storage.local.get('savedAnalyses');
+            let entries = [
+                { url: analysis.url, savedAt: Date.now(), analysis },
+                ...savedAnalyses.filter(entry => entry.url !== analysis.url),
+            ].slice(0, MAX_SAVED_ANALYSES);
+            while (entries.length) {
+                try {
+                    await chrome.storage.local.set({ savedAnalyses: entries });
+                    return;
+                } catch (error) {
+                    if (!/quota/i.test(String(error && error.message))) throw error;
+                    entries = entries.slice(0, -1);
+                }
+            }
+        } catch (error) {
+            console.warn('Could not save the analysis:', error);
+        }
+    }
+
+    // Validate the Gemini API key and pick the model this key can use. The key
+    // goes in a header so it never appears in a URL.
     async validateApiKey(apiKey, { signal } = {}) {
         if (!apiKey) {
             return { success: false, error: 'API key is missing' };
         }
         try {
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
-                { signal }
-            );
-
-            if (response.ok) {
-                return { success: true };
-            } else {
-                const errorData = await response.json();
-                const errorMessage = errorData?.error?.message || 'Invalid API key or network issue';
-                return { success: false, error: errorMessage };
+            const models = [];
+            let pageToken = '';
+            for (let page = 0; page < 5; page++) {
+                const query = `pageSize=1000${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+                const response = await fetch(`${GEMINI_API}/models?${query}`, {
+                    signal,
+                    headers: { 'x-goog-api-key': apiKey },
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    return { success: false, error: errorData?.error?.message || 'Invalid API key or network issue' };
+                }
+                const data = await response.json();
+                models.push(...(data.models || []));
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
             }
+
+            const model = this.pickGeminiModel(models);
+            if (!model) {
+                return { success: false, modelUnavailable: true, error: i18n.getMessage('modelUnavailable') };
+            }
+            return { success: true, model };
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('API key validation failed:', error);
@@ -688,11 +778,28 @@ class GirlsinSightBackground {
         }
     }
 
+    // GEMINI_MODEL if the key can use it, otherwise the newest stable Flash
+    // model new enough for this request format, otherwise null.
+    pickGeminiModel(models) {
+        const usable = models
+            .filter(model => (model.supportedGenerationMethods || []).includes('generateContent'))
+            .map(model => String(model.name || '').replace(/^models\//, ''));
+        if (usable.includes(GEMINI_MODEL)) return GEMINI_MODEL;
+
+        const candidates = usable
+            .map(name => ({ name, match: name.match(/^gemini-(\d+)(?:\.(\d+))?-flash$/) }))
+            .filter(({ match }) => match)
+            .map(({ name, match }) => ({ name, version: Number(match[1]) * 100 + Number(match[2] || 0) }))
+            .filter(({ version }) => version >= MIN_FALLBACK_FLASH_VERSION)
+            .sort((a, b) => b.version - a.version);
+        return candidates.length ? candidates[0].name : null;
+    }
+
     // Keep the service worker alive during long operations
     keepAlive() {
         this.keepAliveInterval = setInterval(() => {
             chrome.runtime.getPlatformInfo().then(r => {});
-            console.log('Keep-alive ping sent.');
+            debugLog('Keep-alive ping sent.');
         }, 20000); // Send a ping every 20 seconds
     }
     
@@ -700,7 +807,7 @@ class GirlsinSightBackground {
         if (this.keepAliveInterval) {
             clearInterval(this.keepAliveInterval);
             this.keepAliveInterval = null;
-            console.log('Keep-alive stopped.');
+            debugLog('Keep-alive stopped.');
         }
     }
     
@@ -730,158 +837,6 @@ class GirlsinSightBackground {
         }
     }
     
-    // Analyze comments with Gemini API
-    async analyzeComments(data) {
-        try {
-            const { topicData, settings } = data;
-            
-            if (!settings.geminiApiKey) {
-                throw new Error(i18n.getMessage('apiKeyMissing'));
-            }
-            
-            // Validate API key before starting analysis
-            this.sendProgress(i18n.getMessage('progressValidatingApiKey') || 'Validating API key...');
-            const validationResult = await this.validateApiKey(settings.geminiApiKey);
-            if (!validationResult.success) {
-                throw new Error(i18n.getMessage('apiKeyInvalid'));
-            }
-            
-            console.log('Starting analysis with', topicData.comments.length, 'comments');
-            
-            // Update settings
-            this.settings = settings;
-            
-            this.sendProgress(i18n.getMessage('progressProcessingComments'));
-            
-            // If scrapeReplies is false (the new default), filter out sub-comments before processing.
-            const commentsForProcessing = settings.scrapeReplies
-                ? topicData.comments
-                : topicData.comments.filter(c => !c.isSubComment);
-
-            // ---> NEW: Calculate activity score here as well for the older flow
-            const activityStats = this.calculateActivityScoreFromComments(commentsForProcessing);
-
-            // Extract just the first comment immediately for summary generation
-            const rawFirstComment = commentsForProcessing.find(c => c.number === 1);
-            
-            // Start summary generation immediately with just the first comment
-            const summaryPromise = (async () => {
-                let summary;
-                let articleInfo = { text: null, source: null };
-                
-                if (rawFirstComment && rawFirstComment.urls && rawFirstComment.urls.length > 0) {
-                    this.sendProgress(i18n.getMessage('progressCheckingArticle'));
-                    // Pass just an array with the first comment for article fetching
-                    articleInfo = await this.fetchArticleFromComment([rawFirstComment]);
-                    
-                    this.sendProgress(i18n.getMessage('progressSendingSummaryRequest'));
-                    summary = await this.generateSummary(topicData, [rawFirstComment], articleInfo.text);
-                    this.sendProgress(i18n.getMessage('progressSummaryReceived'));
-                } else {
-                    this.sendProgress(i18n.getMessage('progressSendingSummaryRequest'));
-                    // Use the raw first comment or empty array if no first comment
-                    summary = await this.generateSummary(topicData, rawFirstComment ? [rawFirstComment] : [], null);
-                    this.sendProgress(i18n.getMessage('progressSummaryReceived'));
-                }
-                
-                // Send summary as soon as it's ready (progressive update)
-                if (settings.progressiveUpdates) {
-                    this.sendPartialResults('summary', {
-                        summary: summary,
-                        source: articleInfo.source,
-                        sourceDetails: articleInfo.sourceDetails
-                    });
-                }
-                
-                return { summary, articleInfo };
-            })();
-
-            // Process all comments in parallel with summary generation
-            const commentsProcessingPromise = (async () => {
-                // Process comments
-                const processedComments = this.processComments(commentsForProcessing);
-                
-                if (processedComments.length === 0) {
-                    throw new Error(i18n.getMessage('noCommentsFound'));
-                }
-
-                // Get comments for analysis
-                const totalToAnalyze = this.getCommentsToAnalyzeCount(topicData.totalComments, settings);
-                
-                // Split the total between top and bottom comments
-                // For odd numbers, give the extra comment to the upvoted side
-                const topCount = Math.ceil(totalToAnalyze / 2);
-                const bottomCount = Math.floor(totalToAnalyze / 2);
-                
-                // Get top and bottom comments early
-                const topComments = this.getTopComments(processedComments, topCount);
-                const bottomComments = this.getBottomComments(processedComments, bottomCount);
-                
-                // Calculate statistics early and send them
-                this.sendProgress(i18n.getMessage('progressCalculatingStats'));
-                const stats = this.calculateStatistics(processedComments, totalToAnalyze);
-                
-                // Send stats and comments as soon as they're ready (progressive update)
-                if (settings.progressiveUpdates) {
-                    this.sendPartialResults('stats', {
-                        stats: stats,
-                        topComments: topComments,
-                        bottomComments: bottomComments,
-                        activityStats: activityStats, // <-- Add activity stats here
-                        settings: settings
-                    });
-                }
-                
-                // Process sentiment analysis
-                this.sendProgress(i18n.getMessage('progressSendingSentimentRequest'));
-                const sentiment = await this.analyzeSentiment(processedComments, topicData);
-                this.sendProgress(i18n.getMessage('progressSentimentReceived'));
-                
-                // Send sentiment as soon as it's ready (progressive update)
-                if (settings.progressiveUpdates) {
-                    this.sendPartialResults('sentiment', {
-                        sentiment: sentiment
-                    });
-                }
-                
-                return { stats, topComments, bottomComments, sentiment, processedComments };
-            })();
-            
-            // Wait for both parallel operations to complete
-            const [summaryResult, commentsResult] = await Promise.all([
-                summaryPromise,
-                commentsProcessingPromise
-            ]);
-            
-            this.sendProgress(i18n.getMessage('progressFinalizing'));
-            
-            return {
-                success: true,
-                data: {
-                    title: topicData.title,
-                    url: topicData.url,
-                    summary: summaryResult.summary,
-                    sentiment: commentsResult.sentiment,
-                    topComments: commentsResult.topComments,
-                    bottomComments: commentsResult.bottomComments,
-                    stats: commentsResult.stats,
-                    activityStats: activityStats, // <-- And here
-                    source: summaryResult.articleInfo.source,
-                    sourceDetails: summaryResult.articleInfo.sourceDetails,
-                    allComments: commentsResult.processedComments,
-                    settings: settings
-                }
-            };
-            
-        } catch (error) {
-            console.error('Error analyzing comments:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-    
     // Send partial results for progressive rendering
     sendPartialResults(type, data, analysisId = null) {
         try {
@@ -907,7 +862,7 @@ class GirlsinSightBackground {
             totalToAnalyze = Math.max(10, Math.min(1000, calculated));
         } else {
             // This now represents the TOTAL number of comments to analyze
-            totalToAnalyze = settings.commentsToAnalyze || 100;
+            totalToAnalyze = settings.commentsToAnalyze || DEFAULT_COMMENTS_TO_ANALYZE;
         }
 
         // Never ask for more comments than the topic has; a larger number would
@@ -916,50 +871,6 @@ class GirlsinSightBackground {
     }
 
 
-
-    // NEW: Re-implementation of calculateActivityScore in background.js
-    // This is to support the older `analyzeComments` flow.
-    calculateActivityScoreFromComments(comments) {
-        if (!comments || comments.length === 0) {
-            return { score: 1, labelKey: 'activityInactive' };
-        }
-
-        const now = new Date();
-        const counts = {
-            hour: 0,
-            day: 0,
-            week: 0,
-            month: 0
-        };
-
-        const timeLimits = {
-            hour: now.getTime() - (60 * 60 * 1000),
-            day: now.getTime() - (24 * 60 * 60 * 1000),
-            week: now.getTime() - (7 * 24 * 60 * 60 * 1000),
-            month: now.getTime() - (30 * 24 * 60 * 60 * 1000)
-        };
-
-        for (const comment of comments) {
-            // The date should already be a valid ISO string from content.js
-            const commentDate = new Date(comment.date);
-            if (commentDate.getTime() > timeLimits.hour) counts.hour++;
-            if (commentDate.getTime() > timeLimits.day) counts.day++;
-            if (commentDate.getTime() > timeLimits.week) counts.week++;
-            if (commentDate.getTime() > timeLimits.month) counts.month++;
-        }
-
-        if (counts.hour > 25) return { score: 10, labelKey: 'activityOnFire', counts };
-        if (counts.hour > 10) return { score: 9, labelKey: 'activityVeryActive', counts };
-        if (counts.day > 50) return { score: 8, labelKey: 'activityActive', counts };
-        if (counts.day > 10) return { score: 7, labelKey: 'activityLively', counts };
-        if (counts.day > 0) return { score: 6, labelKey: 'activityModerate', counts };
-        if (counts.week > 10) return { score: 5, labelKey: 'activitySteady', counts };
-        if (counts.week > 0) return { score: 4, labelKey: 'activityQuiet', counts };
-        if (counts.month > 5) return { score: 3, labelKey: 'activitySlow', counts };
-        if (counts.month > 0) return { score: 2, labelKey: 'activityDormant', counts };
-        
-        return { score: 1, labelKey: 'activityInactive', counts };
-    }
 
     // Process comments data
     processComments(comments) {
@@ -1056,7 +967,6 @@ class GirlsinSightBackground {
                 const cdxResponse = await fetch(cdxUrl, {
                     signal,
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                         'Accept': 'application/json'
                     }
                 });
@@ -1086,7 +996,6 @@ class GirlsinSightBackground {
             const response = await fetch(availableUrl, {
                 signal,
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Accept': 'application/json'
                 }
             });
@@ -1100,12 +1009,7 @@ class GirlsinSightBackground {
         } catch (e) {
             if (e.name === 'AbortError') throw e;
             console.error('Available API search failed:', e);
-            
-            // If all else fails, construct a simple wayback URL
-            // This might not be the most recent, but it's better than nothing
-            const fallbackUrl = `https://web.archive.org/web/*/${url}`;
-            console.log('Using fallback Wayback URL:', fallbackUrl);
-            return null; // Return null since we can't verify if the fallback URL exists
+            return null;
         }
 
         return null;
@@ -1167,12 +1071,11 @@ ${topComment.slice(0, 1000)}`;
             
             // Low thinking keeps the first visible result quick. The cap leaves
             // room for thinking tokens on top of a sub-300-word summary.
-            const response = await this.callGeminiAPI(prompt, GEMINI_MODEL, {
+            return await this.callGeminiAPI(prompt, {
                 maxOutputTokens: 8192,
-                thinkingLevel: 'LOW'
-            }, 3, { signal });
-
-            return response || 'Summary generation failed';
+                thinkingLevel: 'LOW',
+                signal,
+            });
             
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -1186,7 +1089,7 @@ ${topComment.slice(0, 1000)}`;
     }
     
     // Analyze sentiment using Gemini API
-    async analyzeSentiment(comments, topicData, { signal } = {}) {
+    async analyzeSentiment(comments, topicData, { signal, analysisId = null } = {}) {
         try {
             const isJapanese = this.settings.language === 'ja';
             const language = isJapanese ? 'Japanese' : 'English';
@@ -1247,110 +1150,105 @@ Provide your analysis in the following format:
 Sentiment: <positive/neutral/negative>
 Score: <0-10>`;
             
-            // The essay is the core result, so it gets the deepest thinking.
-            const response = await this.callGeminiAPI(prompt, GEMINI_MODEL, {
-                maxOutputTokens: 64000, // model maximum is 65,536, thinking included
-                thinkingLevel: 'HIGH'
-            }, 3, { signal });
-            
-            if (response) {
-                return this.parseSentimentResponse(response);
+            // The essay is the core result, so it gets the deepest thinking and
+            // is streamed to the panel as it is written. Thinking and the essay
+            // share the output limit (model maximum 65,536); if thinking uses it
+            // up, one more try with less thinking usually finishes.
+            const drafts = this.createDraftSender(analysisId);
+            const request = thinkingLevel => this.callGeminiAPI(prompt, {
+                maxOutputTokens: 64000,
+                thinkingLevel,
+                onText: drafts.update,
+                signal,
+            });
+            let response;
+            try {
+                try {
+                    response = await request('HIGH');
+                } catch (error) {
+                    if (error.code !== 'MAX_TOKENS') throw error;
+                    response = await request('MEDIUM');
+                }
+            } finally {
+                drafts.flush();
             }
-            
-            return {
-                label: 'neutral',
-                score: 5,
-                details: 'Sentiment analysis could not be completed'
-            };
-            
+            return this.parseSentimentResponse(response);
+
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('Error analyzing sentiment:', error);
-            // Return cleaner error message for API key issues
-            const errorMessage = error.message === i18n.getMessage('apiKeyInvalid') 
-                ? i18n.getMessage('apiKeyInvalid') 
-                : `Sentiment analysis failed: ${error.message}`;
-            
-            return {
-                label: 'neutral',
-                score: 5,
-                details: errorMessage
-            };
+            const knownMessages = [i18n.getMessage('apiKeyInvalid'), i18n.getMessage('rateLimited')];
+            const details = error.code === 'MAX_TOKENS'
+                ? i18n.getMessage('sentimentIncomplete')
+                : knownMessages.includes(error.message)
+                    ? error.message
+                    : `Sentiment analysis failed: ${error.message}`;
+            // No score rather than a made-up neutral one.
+            return { label: null, score: null, details };
         }
     }
-    
-    // Parse sentiment response
-    parseSentimentResponse(response) {
-        const lines = response.split('\n');
-        let sentimentLabel = 'neutral';
-        let score = 5;
-        let details = response;
-        
-        // Look for sentiment and score - handle both single line and multi-line formats
-        for (const line of lines) {
-            // Handle both sentiment and score on the same line (with or without markdown)
-            // This handles formats like: **Sentiment:** Negative **Score:** 1/10
-            const combinedMatch = line.match(/\*{0,2}\s*sentiment:\s*\*{0,2}\s*(positive|neutral|negative).*?\*{0,2}\s*score:\s*\*{0,2}\s*(\d+)(?:\/10)?/i);
-            if (combinedMatch) {
-                sentimentLabel = combinedMatch[1].toLowerCase();
-                score = parseInt(combinedMatch[2]) || 5;
-                continue;
-            }
-            
-            // Handle sentiment separately (with or without markdown asterisks)
-            if (line.toLowerCase().includes('sentiment:')) {
-                // This regex handles: Sentiment: positive, **Sentiment:** positive, etc.
-                const match = line.match(/\*{0,2}\s*sentiment:\s*\*{0,2}\s*(positive|neutral|negative)/i);
-                if (match) {
-                    sentimentLabel = match[1].toLowerCase();
-                }
-            }
-            
-            // Handle score separately - now handles "X/10" format and markdown
-            if (line.toLowerCase().includes('score:')) {
-                // This regex handles: Score: 5, **Score:** 5/10, Score: 5/10, etc.
-                const match = line.match(/\*{0,2}\s*score:\s*\*{0,2}\s*(\d+)(?:\/10)?/i);
-                if (match) {
-                    score = parseInt(match[1]) || 5;
-                }
-            }
-        }
-        
-        // Validate and correct sentiment label based on score
-        // This ensures consistency between score and label
-        if (score >= 7) {
-            sentimentLabel = 'positive';
-        } else if (score >= 4 && score <= 6) {
-            sentimentLabel = 'neutral';
-        } else if (score <= 3) {
-            sentimentLabel = 'negative';
-        }
-        
-        // Remove the sentiment and score lines from the details text
-        // Updated regex to handle markdown formatting and all variations
-        let cleanDetails = response
-            .replace(/(\r\n|\n|\r)/gm, "\n") // Normalize line endings
-            .split('\n')
-            .filter(line => {
-                // Remove any line containing sentiment: or score: (case insensitive)
-                // This catches all variations including markdown, spacing, etc.
-                const containsSentiment = /sentiment\s*:/i.test(line);
-                const containsScore = /score\s*:/i.test(line);
-                return !containsSentiment && !containsScore;
-            })
-            .join('\n')
-            .trim();
-        
+
+    // Forwards streamed essay text to the side panel at most every
+    // DRAFT_INTERVAL_MS; flush() sends whatever is still pending.
+    createDraftSender(analysisId) {
+        let lastSent = 0;
+        let pending = null;
+        let timer = null;
+        const send = () => {
+            timer = null;
+            lastSent = Date.now();
+            this.sendPartialResults('sentimentDraft', { text: pending }, analysisId);
+        };
         return {
-            label: sentimentLabel,
-            score: score,
-            details: this.formatVotesWithArrows(cleanDetails)
+            update: text => {
+                pending = text;
+                if (timer) return;
+                const wait = DRAFT_INTERVAL_MS - (Date.now() - lastSent);
+                if (wait <= 0) send();
+                else timer = setTimeout(send, wait);
+            },
+            flush: () => {
+                if (!timer) return;
+                clearTimeout(timer);
+                send();
+            },
+        };
+    }
+    
+    // Parse sentiment response. The prompt asks for "Sentiment:" and "Score:"
+    // lines at the very end, so only that closing block is read and removed;
+    // the same words elsewhere in the essay are left alone.
+    parseSentimentResponse(response) {
+        const lines = String(response || '').replace(/\r\n?/g, '\n').split('\n');
+        const isVerdictLine = line => /^[\s*_#>-]*(sentiment|score)\s*(\*\*)?\s*[:：]/i.test(line);
+
+        let end = lines.length;
+        const verdictLines = [];
+        while (end > 0) {
+            const line = lines[end - 1];
+            if (!line.trim()) { end--; continue; }
+            if (!isVerdictLine(line)) break;
+            verdictLines.unshift(line);
+            end--;
+        }
+        const verdict = verdictLines.join('\n');
+
+        // A missing score stays null rather than defaulting to a neutral 5.
+        const scoreMatch = verdict.match(/score\s*(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(\d+(?:\.\d+)?)/i);
+        const score = scoreMatch ? Math.min(10, Math.max(0, Math.round(Number(scoreMatch[1])))) : null;
+        // The label follows the score bands the prompt defines.
+        const label = score === null ? null : score >= 7 ? 'positive' : score >= 4 ? 'neutral' : 'negative';
+
+        return {
+            label,
+            score,
+            details: this.formatVotesWithArrows(lines.slice(0, end).join('\n').trim()),
         };
     }
     
     // Calculate statistics
     calculateStatistics(comments, commentsAnalyzed) {
-        console.log('calculateStatistics called with:', {
+        debugLog('calculateStatistics called with:', {
             commentsLength: comments.length,
             commentsAnalyzed: commentsAnalyzed,
             firstComment: comments[0],
@@ -1400,7 +1298,7 @@ Score: <0-10>`;
                 controversyScore = scoreNumeric.toFixed(1);
 
                 // Debug logging
-                console.log('Controversy calculation (polarity model) debug:', {
+                debugLog('Controversy calculation (polarity model) debug:', {
                     validCommentsLength: validComments.length,
                     samplePolarities: polarities.slice(0, 10),
                     polarityStdDev: polarityStdDev,
@@ -1415,7 +1313,7 @@ Score: <0-10>`;
         // A low score means votes are split (close to 50/50).
         let consensusScore = '5.0'; // Default
         if (mainComments.length > 0) {
-            console.log('Consensus calculation debug - mainComments sample:', {
+            debugLog('Consensus calculation debug - mainComments sample:', {
                 totalMainComments: mainComments.length,
                 firstComment: mainComments[0],
                 hasUpvoteRatio: mainComments[0] && 'upvoteRatio' in mainComments[0],
@@ -1424,7 +1322,7 @@ Score: <0-10>`;
             
             const validComments = mainComments.filter(c => typeof c.upvoteRatio === 'number' && !isNaN(c.upvoteRatio) && isFinite(c.upvoteRatio));
 
-            console.log('Consensus calculation debug - after filtering:', {
+            debugLog('Consensus calculation debug - after filtering:', {
                 validCommentsLength: validComments.length,
                 filteringResult: validComments.length > 0 ? 'Has valid comments' : 'No valid comments found!'
             });
@@ -1447,7 +1345,7 @@ Score: <0-10>`;
                 consensusScore = scoreNumeric.toFixed(1);
 
                 // Debug logging
-                console.log('Consensus calculation (decisiveness model) debug:', {
+                debugLog('Consensus calculation (decisiveness model) debug:', {
                     totalMainComments: mainComments.length,
                     validCommentsLength: validComments.length,
                     sampleRatios: validComments.slice(0, 10).map(c => c.upvoteRatio),
@@ -1548,105 +1446,168 @@ Score: <0-10>`;
     }
     
     // Call Gemini API with retry logic
-    // Request format for Gemini 3.6+ models: temperature/topP/topK are ignored
-    // and not sent, thinking depth is set with thinkingLevel, and the adjustable
-    // safety filters already default to off, so no safetySettings are needed.
+    // Gemini request format for 3.6+ models: thinking depth is set with
+    // thinkingLevel; temperature/topP/topK are ignored by these models and are
+    // not sent. The key goes in the x-goog-api-key header, never the URL.
     // `store: false` keeps requests out of the user's AI Studio request logs,
     // which new paid-tier projects enable by default since October 26, 2026.
-    async callGeminiAPI(prompt, model = GEMINI_MODEL, { maxOutputTokens = 1024, thinkingLevel } = {}, maxRetries = 3, { signal } = {}) {
-        const generationConfig = { maxOutputTokens };
-        if (thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel };
+    // With onText, the reply is streamed and onText receives the text so far.
+    async callGeminiAPI(prompt, {
+        model = this.geminiModel || GEMINI_MODEL,
+        maxOutputTokens = 8192,
+        thinkingLevel = 'LOW',
+        onText = null,
+        signal,
+        maxAttempts = 3,
+    } = {}) {
+        const body = JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            safetySettings: SAFETY_SETTINGS,
+            generationConfig: { maxOutputTokens, thinkingConfig: { thinkingLevel } },
+            store: false,
+        });
+        const method = onText ? 'streamGenerateContent?alt=sse' : 'generateContent';
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 this.throwIfAborted(signal);
-                const requestBody = {
-                    contents: [{
-                        parts: [{
-                            text: prompt
-                        }]
-                    }],
-                    generationConfig,
-                    store: false
-                };
-                
-                console.log(`Gemini API call attempt ${attempt}/${maxRetries}`);
-                
-                const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.settings.geminiApiKey}`,
-                    {
+                if (onText && attempt > 1) onText(''); // a retry starts the text over
+                debugLog(`Gemini ${model} attempt ${attempt}/${maxAttempts}`);
+
+                let response;
+                try {
+                    response = await fetch(`${GEMINI_API}/models/${model}:${method}`, {
                         method: 'POST',
                         signal,
                         headers: {
                             'Content-Type': 'application/json',
+                            'x-goog-api-key': this.settings.geminiApiKey,
                         },
-                        body: JSON.stringify(requestBody)
-                    }
-                );
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    let apiError = null;
-                    try {
-                        apiError = JSON.parse(errorText).error || null;
-                    } catch (_) {
-                        // Not JSON; report the raw text below.
-                    }
-                    const isKeyError = apiError &&
-                        [400, 401, 403].includes(apiError.code) &&
-                        (String(apiError.message || '').includes('API key') ||
-                         (apiError.details || []).some(d => String(d.reason || '').startsWith('API_KEY')));
-                    if (isKeyError) {
-                        // A bad key will not start working on retry.
-                        const keyError = new Error(i18n.getMessage('apiKeyInvalid'));
-                        keyError.retryable = false;
-                        throw keyError;
-                    }
-                    throw new Error(`API request failed (${response.status}): ${errorText}`);
+                        body,
+                    });
+                } catch (networkError) {
+                    if (networkError.name === 'AbortError') throw networkError;
+                    throw this.geminiError(`Network error: ${networkError.message}`, { retryable: true });
                 }
-                
-                const data = await response.json();
-                
-                if (data.promptFeedback?.blockReason) {
-                    const reason = data.promptFeedback.blockReason;
-                    const safetyRatings = (data.promptFeedback.safetyRatings || []).map(r => `${r.category}: ${r.probability}`).join(', ');
-                    throw new Error(`API call blocked due to ${reason}. ${safetyRatings ? `Details: ${safetyRatings}` : ''}`);
-                }
+                if (!response.ok) throw await this.geminiHttpError(response);
 
-                // The answer can span several parts; thought parts are the
-                // model's reasoning, not part of the answer.
-                const parts = data.candidates?.[0]?.content?.parts || [];
-                const text = parts
-                    .filter(part => typeof part.text === 'string' && !part.thought)
-                    .map(part => part.text)
-                    .join('');
-                if (text.trim()) {
-                    return text;
-                }
-                
-                const finishReason = data.candidates?.[0]?.finishReason;
-                if (finishReason && finishReason !== 'STOP') {
-                    throw new Error(`API call finished with reason: ${finishReason}`);
-                }
-                
-                if (data.error) {
-                    throw new Error(`API error: ${data.error.message}`);
-                }
-                
-                throw new Error('No valid text response from API');
-                
+                const reply = { text: '', finishReason: null, blockReason: null };
+                if (onText) await this.readGeminiStream(response, reply, onText);
+                else this.absorbGeminiChunk(reply, await response.json());
+                return this.finishGeminiReply(reply);
             } catch (error) {
                 if (error.name === 'AbortError' || (signal && signal.aborted)) throw this.abortError();
                 console.error(`Gemini API attempt ${attempt} failed:`, error);
-
-                if (attempt === maxRetries || error.retryable === false) {
-                    throw error;
-                }
-                
-                // Wait before retry
-                await this.delayWithSignal(1000 * attempt, signal);
+                // Only failures a retry can fix are retried: network errors,
+                // server errors and rate limits (after the wait Gemini asks for).
+                if (error.retryable === false || attempt === maxAttempts) throw error;
+                await this.delayWithSignal(error.retryAfterMs ?? 1000 * attempt, signal);
             }
         }
+    }
+
+    geminiError(message, { retryable = false, code = null, retryAfterMs = null } = {}) {
+        const error = new Error(message);
+        error.retryable = retryable;
+        if (code) error.code = code;
+        if (retryAfterMs !== null) error.retryAfterMs = retryAfterMs;
+        return error;
+    }
+
+    async geminiHttpError(response) {
+        const errorText = await response.text();
+        let apiError = null;
+        try {
+            apiError = JSON.parse(errorText).error || null;
+        } catch (_) {
+            // Not JSON; the raw text is reported below.
+        }
+        const details = (apiError && apiError.details) || [];
+
+        const isKeyError = apiError &&
+            [400, 401, 403].includes(apiError.code) &&
+            (String(apiError.message || '').includes('API key') ||
+             details.some(detail => String(detail.reason || '').startsWith('API_KEY')));
+        if (isKeyError) return this.geminiError(i18n.getMessage('apiKeyInvalid'));
+
+        if (response.status === 429) {
+            const retryInfo = details.find(detail => String(detail['@type'] || '').endsWith('RetryInfo'));
+            const seconds = retryInfo ? parseFloat(retryInfo.retryDelay) : NaN;
+            const waitMs = Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : 5000;
+            return this.geminiError(i18n.getMessage('rateLimited'), {
+                retryable: waitMs <= MAX_RETRY_WAIT_MS,
+                retryAfterMs: waitMs,
+            });
+        }
+
+        return this.geminiError(
+            `API request failed (${response.status}): ${apiError ? apiError.message : errorText}`,
+            { retryable: response.status >= 500 }
+        );
+    }
+
+    // Adds one GenerateContentResponse (a whole reply or one streamed chunk).
+    // Thought parts are the model's reasoning, not part of the answer.
+    absorbGeminiChunk(reply, chunk) {
+        if (chunk.error) {
+            throw this.geminiError(`API error: ${chunk.error.message}`, { retryable: (chunk.error.code || 0) >= 500 });
+        }
+        if (chunk.promptFeedback && chunk.promptFeedback.blockReason) {
+            reply.blockReason = chunk.promptFeedback.blockReason;
+        }
+        const candidate = chunk.candidates && chunk.candidates[0];
+        if (!candidate) return;
+        for (const part of (candidate.content && candidate.content.parts) || []) {
+            if (typeof part.text === 'string' && !part.thought) reply.text += part.text;
+        }
+        if (candidate.finishReason) reply.finishReason = candidate.finishReason;
+    }
+
+    // Reads a streamGenerateContent?alt=sse body: "data: {json}" events
+    // separated by blank lines.
+    async readGeminiStream(response, reply, onText) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const handleEvent = event => {
+            const data = event.split(/\r?\n/)
+                .filter(line => line.startsWith('data:'))
+                .map(line => line.slice(5).trimStart())
+                .join('\n');
+            if (!data) return;
+            const before = reply.text;
+            this.absorbGeminiChunk(reply, JSON.parse(data));
+            if (reply.text !== before) onText(reply.text);
+        };
+        for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split(/\r?\n\r?\n/);
+            buffer = events.pop();
+            events.forEach(handleEvent);
+        }
+        buffer += decoder.decode();
+        if (buffer.trim()) handleEvent(buffer);
+    }
+
+    // Turns a finished reply into text, or an error that says whether a retry
+    // could help. A reply cut off at the token limit is never returned as if
+    // it were complete.
+    finishGeminiReply(reply) {
+        if (reply.blockReason) {
+            throw this.geminiError(`API call blocked due to ${reply.blockReason}.`);
+        }
+        if (reply.finishReason === 'MAX_TOKENS') {
+            throw this.geminiError('Response was cut off at the output token limit.', { code: 'MAX_TOKENS' });
+        }
+        if (reply.finishReason && reply.finishReason !== 'STOP') {
+            throw this.geminiError(`API call finished with reason: ${reply.finishReason}`);
+        }
+        if (!reply.text.trim()) {
+            throw this.geminiError('No valid text response from API', { retryable: true });
+        }
+        return reply.text;
     }
     
     // Generate Excel file
@@ -1664,19 +1625,8 @@ Score: <0-10>`;
             this.applyStyles(analysisWorksheet, analysis, analysisWorksheetData);
             XLSX.utils.book_append_sheet(workbook, analysisWorksheet, l('reportSheetName'));
 
-            // All Comments Sheet
-            // Sort comments with hierarchical numbering support
-            const sortedComments = [...analysis.allComments].sort((a, b) => {
-                // Handle hierarchical comment numbers (e.g., "5.1", "5.2")
-                const parseNumber = (num) => {
-                    if (typeof num === 'string' && num.includes('.')) {
-                        const parts = num.split('.');
-                        return parseFloat(parts[0]) + parseFloat(parts[1]) / 100;
-                    }
-                    return parseFloat(num);
-                };
-                return parseNumber(a.number) - parseNumber(b.number);
-            });
+            // All Comments Sheet, in thread order with replies under their parent
+            const sortedComments = this.sortCommentsForExport(analysis.allComments);
             const commentsWorksheetData = this.createCommentsSheetData(sortedComments);
             const commentsWorksheet = XLSX.utils.aoa_to_sheet(commentsWorksheetData);
 
@@ -1764,13 +1714,13 @@ Score: <0-10>`;
         // Add sentiment analysis
         data.push([l('sentimentTitle'), ...empty_cells]);
         
-        // Localize sentiment label
-        let sentimentLabelKey = 'sentimentNeutral';
-        if (analysis.sentiment.label === 'positive') sentimentLabelKey = 'sentimentPositive';
-        if (analysis.sentiment.label === 'negative') sentimentLabelKey = 'sentimentNegative';
+        // Localize sentiment label; a failed or unfinished analysis has none.
+        const labelKeys = { positive: 'sentimentPositive', neutral: 'sentimentNeutral', negative: 'sentimentNegative' };
+        const labelKey = labelKeys[analysis.sentiment.label];
+        const score = analysis.sentiment.score;
 
-        data.push([l('overallScoreLabel'), l(sentimentLabelKey), '', '', '']);
-        data.push([l('scoreLabel'), analysis.sentiment.score, '', '', '']);
+        data.push([l('overallScoreLabel'), labelKey ? l(labelKey) : '-', '', '', '']);
+        data.push([l('scoreLabel'), typeof score === 'number' ? score : '-', '', '', '']);
         data.push([l('detailsLabel'), analysis.sentiment.details, ...empty_cells]);
         data.push([]);
 
@@ -1795,7 +1745,7 @@ Score: <0-10>`;
                 comment.text,
                 comment.plus,
                 comment.minus,
-                new Date(comment.date).toLocaleString(),
+                this.formatCommentDate(comment.date),
                 comment.number
             ]);
         });
@@ -1811,7 +1761,7 @@ Score: <0-10>`;
                 comment.text,
                 comment.plus,
                 comment.minus,
-                new Date(comment.date).toLocaleString(),
+                this.formatCommentDate(comment.date),
                 comment.number
             ]);
         });
@@ -1883,6 +1833,16 @@ Score: <0-10>`;
         wrapCommentRows(bottomCommentsTitleRow, analysis.bottomComments.length);
     }
 
+    // new Date(null) is 1970-01-01, so a comment with no readable date gets "-".
+    formatCommentDate(date) {
+        const time = date ? new Date(date).getTime() : NaN;
+        return Number.isNaN(time) ? '-' : new Date(time).toLocaleString();
+    }
+
+    sortCommentsForExport(comments) {
+        return [...comments].sort((a, b) => compareCommentNumbers(a.number, b.number));
+    }
+
     createCommentsSheetData(comments) {
         const data = [];
         const l = i18n.getMessage.bind(i18n); // Helper for localization
@@ -1894,7 +1854,7 @@ Score: <0-10>`;
         comments.forEach(comment => {
             data.push([
                 comment.number, // Using the original number directly
-                new Date(comment.date).toLocaleString(),
+                this.formatCommentDate(comment.date),
                 comment.plus,
                 comment.minus,
                 comment.total,
@@ -1914,7 +1874,6 @@ Score: <0-10>`;
             const response = await fetch(url, {
                 signal,
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
                 }

@@ -101,6 +101,20 @@
         return candidates;
     }
 
+    // Chrome host-permission patterns needed to read the given links: each
+    // linked site, plus the Wayback Machine used when a link is dead. Empty
+    // when nothing in the list is a readable article link.
+    const ARCHIVE_ORIGINS = ['https://web.archive.org/*', 'https://archive.org/*'];
+    function articleAccessOrigins(rawCandidates) {
+        const origins = [];
+        for (const candidate of collectArticleCandidates(rawCandidates || [])) {
+            const { protocol, host } = new URL(candidate);
+            const pattern = `${protocol}//${host}/*`;
+            if (!origins.includes(pattern)) origins.push(pattern);
+        }
+        return origins.length ? [...origins, ...ARCHIVE_ORIGINS] : [];
+    }
+
     function createSourceReference({ originalUrl, resolvedUrl, kind = 'live' }) {
         const reference = {
             href: originalUrl,
@@ -367,6 +381,7 @@
 
     return {
         ArticlePipeline,
+        articleAccessOrigins,
         buildArticleExcerpt,
         collectArticleCandidates,
         createSourceReference,

@@ -309,5 +309,23 @@
     },
     "archivedCopyLabel": {
         "message": "アーカイブ版"
+    },
+    "modelUnavailable": {
+        "message": "このAPIキーでは、GirlsinSightに必要なGemini 3.6 Flash以降のモデルを利用できません。"
+    },
+    "rateLimited": {
+        "message": "Geminiの利用制限に達しました。1分ほど待ってから、もう一度お試しください。"
+    },
+    "sentimentIncomplete": {
+        "message": "分析が途中で切れてしまいました。もう一度お試しいただくか、分析するコメント数を減らしてください。"
+    },
+    "savedAnalysisNotice": {
+        "message": "$1 に保存した分析を表示しています"
+    },
+    "backButtonLabel": {
+        "message": "戻る"
+    },
+    "closeButtonLabel": {
+        "message": "閉じる"
     }
 }

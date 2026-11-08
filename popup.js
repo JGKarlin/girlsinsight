@@ -86,6 +86,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         let extractionInProgress = false;
         let currentAnalysisId = null;
         let currentAnalysisTabId = null;
+        let analysisPort = null;
+        // Topic info for the open tab (includes the topic post's article links),
+        // and article-site permissions declined while this panel is open.
+        let topicInfoCache = null;
+        const declinedArticleOrigins = new Set();
         const scopedAnalysisActions = new Set([
             'extractionProgress',
             'analysisProgress',
@@ -119,6 +124,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
             });
 
+            // Localize accessible names of icon-only buttons
+            document.querySelectorAll('[data-i18n-aria-label]').forEach(elem => {
+                const localizedString = l(elem.getAttribute('data-i18n-aria-label'));
+                if (localizedString) elem.setAttribute('aria-label', localizedString);
+            });
+
             // Localize placeholder attributes
             document.querySelectorAll('[data-i18n-placeholder]').forEach(elem => {
                 const key = elem.getAttribute('data-i18n-placeholder');
@@ -142,13 +153,15 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (isGirlsChannelTopic(currentUrl)) {
                     showAnalysisView();
                     await refreshAndLoadTopicInfo();
-                    
+
                     // Show setup notice if no API key
                     if (!settings.geminiApiKey) {
                         showSetupNotice();
                     } else {
                         hideSetupNotice();
                     }
+                    // After the status reset above, so its notice stays visible.
+                    await showSavedAnalysis(currentUrl);
                 } else {
                     showWelcomeScreen();
                     
@@ -179,19 +192,24 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Get settings
         async function getSettings() {
             try {
-                const result = await chrome.storage.sync.get([
-                    'geminiApiKey',
-                    'language',
-                    'commentsToAnalyze',
-                    'commentsToDisplay',
-                    'autoCommentCalculation',
-                    'scrapeReplies'
+                const [result, local] = await Promise.all([
+                    chrome.storage.sync.get([
+                        'geminiApiKey',
+                        'language',
+                        'commentsToAnalyze',
+                        'commentsToDisplay',
+                        'autoCommentCalculation',
+                        'scrapeReplies'
+                    ]),
+                    // The key is kept on this device only; the service worker
+                    // moves keys saved by older versions out of sync storage.
+                    chrome.storage.local.get('geminiApiKey'),
                 ]);
-                
+
                 return {
-                    geminiApiKey: result.geminiApiKey || null,
+                    geminiApiKey: local.geminiApiKey || result.geminiApiKey || null,
                     language: result.language || 'ja',
-                    commentsToAnalyze: result.commentsToAnalyze || 100,
+                    commentsToAnalyze: result.commentsToAnalyze || 30,
                     commentsToDisplay: result.commentsToDisplay || 5,
                     autoCommentCalculation: result.autoCommentCalculation !== false,
                     scrapeReplies: result.scrapeReplies || false
@@ -314,7 +332,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             displayStatus(l('savingSettings'), 'info');
 
             try {
-                await chrome.storage.sync.set({ [key]: value });
+                if (key === 'geminiApiKey') {
+                    await chrome.storage.local.set({ geminiApiKey: value });
+                    await chrome.storage.sync.remove('geminiApiKey');
+                } else {
+                    await chrome.storage.sync.set({ [key]: value });
+                }
 
                 // Notify background script about the update
                 const settings = await getSettings();
@@ -454,7 +477,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
             } catch (error) {
                 if (validationStatus) {
-                    validationStatus.textContent = `${l('apiKeyInvalid')}: ${error.message}`;
+                    // A key that works but cannot reach a usable model gets its own message.
+                    validationStatus.textContent = error.message === l('modelUnavailable')
+                        ? error.message
+                        : `${l('apiKeyInvalid')}: ${error.message}`;
                     validationStatus.className = 'validation-status error';
                 }
             } finally {
@@ -473,13 +499,14 @@ document.addEventListener('DOMContentLoaded', async function() {
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 const settings = await getSettings();
                 
-                if (currentTopicInfo && currentTopicInfo.url === tab.url) {
+                topicInfoCache = currentTopicInfo && currentTopicInfo.url === tab.url ? currentTopicInfo : null;
+                if (topicInfoCache) {
                     const { title, commentCount, url, postDate } = currentTopicInfo;
                     
                     if (document.getElementById('topic-title')) document.getElementById('topic-title').textContent = title;
                     if (document.getElementById('topic-url')) document.getElementById('topic-url').textContent = url;
                     if (document.getElementById('comment-count')) document.getElementById('comment-count').textContent = `${commentCount} ${l('commentsUnit') || 'comments'}`;
-                    if (document.getElementById('analysis-date')) document.getElementById('analysis-date').textContent = postDate || new Date().toLocaleDateString();
+                    if (document.getElementById('analysis-date')) document.getElementById('analysis-date').textContent = postDate || '';
                     
                     updateStatus('ready', l('statusReady'));
                     // Enable analyze button only if API key exists
@@ -539,6 +566,44 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }
 
+        // Mount the React results view once.
+        function mountResults() {
+            if (window.reactResultsMounted) return;
+            ReactDOM.render(
+                React.createElement(AnalysisResults, { i18n: i18n.getMessage.bind(i18n) }),
+                document.getElementById('results-root')
+            );
+            window.reactResultsMounted = true;
+        }
+
+        // The results view exposes window.setAnalysisResults from an effect,
+        // which runs just after mounting; wait for it (up to about a second).
+        async function whenResultsReady() {
+            for (let i = 0; i < 60 && !window.setAnalysisResults; i++) {
+                await new Promise(resolve => setTimeout(resolve, 16));
+            }
+            return Boolean(window.setAnalysisResults);
+        }
+
+        // Show the saved analysis for this topic, if there is one. It stays
+        // until the user runs a new analysis.
+        async function showSavedAnalysis(tabUrl) {
+            const pageInfo = globalThis.GirlsinSightParsing.topicPageInfo(tabUrl);
+            if (!pageInfo || extractionInProgress) return;
+            const { savedAnalyses = [] } = await chrome.storage.local.get('savedAnalyses');
+            const saved = savedAnalyses.find(entry => entry.url === pageInfo.firstPageUrl);
+            if (!saved) return;
+
+            mountResults();
+            if (!(await whenResultsReady())) return;
+            window.setAnalysisResults(saved.analysis);
+            currentAnalysis = saved.analysis;
+            const resultsRoot = document.getElementById('results-root');
+            if (resultsRoot) resultsRoot.style.display = 'block';
+            if (document.body) document.body.classList.add('analysis-results-view');
+            updateStatus('ready', l('savedAnalysisNotice', [new Date(saved.savedAt).toLocaleString()]));
+        }
+
         // Analyze current topic
         async function analyzeCurrentTopic() {
             if (extractionInProgress) {
@@ -549,14 +614,26 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
             
             try {
-                // Chrome shows its own permission prompt on the explicit Analyze click.
-                // Denial is non-fatal: the first comment can still be summarized.
-                const articleAccessPromise = chrome.permissions.request({
-                    origins: ['http://*/*', 'https://*/*']
-                }).catch(error => {
-                    console.warn('Article host access was not granted:', error);
-                    return false;
-                });
+                // Ask for access only to the sites the topic post links to, plus
+                // the Wayback Machine for dead links. This runs first, while
+                // Chrome still treats the click as a user gesture. A decline is
+                // remembered while the panel is open and is not fatal: the topic
+                // post can still be summarized without the article.
+                const origins = globalThis.GirlsinSightArticlePipeline.articleAccessOrigins(
+                    topicInfoCache && topicInfoCache.articleUrls
+                );
+                const alreadyDeclined = origins.length > 0 && origins.every(origin => declinedArticleOrigins.has(origin));
+                const articleAccessPromise = !origins.length || alreadyDeclined
+                    ? Promise.resolve(false)
+                    : chrome.permissions.request({ origins }).then(granted => {
+                        origins.forEach(origin => (granted
+                            ? declinedArticleOrigins.delete(origin)
+                            : declinedArticleOrigins.add(origin)));
+                        return granted;
+                    }).catch(error => {
+                        console.warn('Article site access was not granted:', error);
+                        return false;
+                    });
                 const settings = await getSettings();
                 const articleAccessGranted = await articleAccessPromise;
                 
@@ -573,16 +650,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
                 // Mount React component immediately to show loading states
                 const resultsRoot = document.getElementById('results-root');
-                if (!window.reactResultsMounted) {
-                    ReactDOM.render(
-                        React.createElement(AnalysisResults, { 
-                            i18n: i18n.getMessage.bind(i18n) 
-                        }), 
-                        resultsRoot
-                    );
-                    window.reactResultsMounted = true;
-                }
-                
+                mountResults();
+
                 // Clear previous results when starting new analysis
                 if (window.clearAnalysisResults) {
                     window.clearAnalysisResults();
@@ -593,6 +662,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 currentAnalysisId = crypto.randomUUID();
                 currentAnalysisTabId = tab.id;
                 window.currentAnalysisId = currentAnalysisId;
+                // Kept open for the run; Chrome closes it with the panel, which
+                // tells the service worker to cancel.
+                analysisPort = chrome.runtime.connect({ name: `analysis:${currentAnalysisId}` });
                 
                 // Delegate the entire analysis process to the background script
                 const analysisResponse = await chrome.runtime.sendMessage({

@@ -3,10 +3,33 @@ const assert = require('node:assert/strict');
 
 const {
     ArticlePipeline,
+    articleAccessOrigins,
     buildArticleExcerpt,
     collectArticleCandidates,
     createSourceReference,
 } = require('./article-pipeline.js');
+
+test('article access is requested only for the linked sites plus the Wayback Machine', () => {
+    const origins = articleAccessOrigins([
+        'https://news.yahoo.co.jp/articles/abc?utm_source=x',
+        'https://news.yahoo.co.jp/pickup/1',
+        'http://example.com/story',
+        'https://girlschannel.net/topics/1/',
+        'https://img.example/picture.jpg',
+    ]);
+    assert.deepEqual(origins, [
+        'https://news.yahoo.co.jp/*',
+        'http://example.com/*',
+        'https://web.archive.org/*',
+        'https://archive.org/*',
+    ]);
+});
+
+test('no article access is requested when the opening post links nowhere readable', () => {
+    assert.deepEqual(articleAccessOrigins([]), []);
+    assert.deepEqual(articleAccessOrigins(['https://girlschannel.net/topics/1/', 'https://img.example/a.png']), []);
+    assert.deepEqual(articleAccessOrigins(undefined), []);
+});
 
 function successfulPage(overrides = {}) {
     return {

@@ -305,5 +305,23 @@
     },
     "archivedCopyLabel": {
         "message": "Archived copy"
+    },
+    "modelUnavailable": {
+        "message": "This API key can't use Gemini 3.6 Flash or newer, which GirlsinSight needs."
+    },
+    "rateLimited": {
+        "message": "Gemini's rate limit was reached. Wait a minute, then try again."
+    },
+    "sentimentIncomplete": {
+        "message": "The analysis was cut off before it finished. Try again, or analyze fewer comments."
+    },
+    "savedAnalysisNotice": {
+        "message": "Showing the saved analysis from $1"
+    },
+    "backButtonLabel": {
+        "message": "Back"
+    },
+    "closeButtonLabel": {
+        "message": "Close"
     }
 }
