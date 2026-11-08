@@ -8,6 +8,10 @@
     root.GirlsinSightParsing = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function makeGirlsChannelParsing() {
     const JST_OFFSET_HOURS = 9;
+    // GirlsChannel's home page. The site is served from girlschannel.net;
+    // www.girlschannel.net still resolves but no longer answers.
+    const GIRLSCHANNEL_HOME_URL = 'https://girlschannel.net/';
+    const GIRLSCHANNEL_HOST = new URL(GIRLSCHANNEL_HOME_URL).hostname;
 
     // GirlsChannel shows times in Japan Standard Time (UTC+9, no daylight
     // saving). Build the instant from UTC so the browser's own time zone
@@ -42,7 +46,7 @@
         } catch (_) {
             return null;
         }
-        if (parsed.hostname !== 'girlschannel.net') return null;
+        if (parsed.hostname !== GIRLSCHANNEL_HOST) return null;
         const match = parsed.pathname.match(/^\/topics\/(\d+)\/(?:(\d+)\/?)?$/);
         if (!match) return null;
         return {
@@ -65,6 +69,7 @@
     }
 
     return {
+        GIRLSCHANNEL_HOME_URL,
         compareCommentNumbers,
         parseGirlsChannelDate,
         topicPageInfo,

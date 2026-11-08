@@ -2,10 +2,19 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    GIRLSCHANNEL_HOME_URL,
     compareCommentNumbers,
     parseGirlsChannelDate,
     topicPageInfo,
 } = require('./girlschannel-parsing.js');
+
+test('the "Go to GirlsChannel" link opens the site the extension recognizes', () => {
+    // www.girlschannel.net no longer answers, and the extension only treats
+    // girlschannel.net as GirlsChannel, so the link must use that host.
+    assert.equal(typeof GIRLSCHANNEL_HOME_URL, 'string');
+    assert.ok(topicPageInfo(new URL('topics/1/', GIRLSCHANNEL_HOME_URL).href),
+        'topic pages under the home link are recognized as GirlsChannel');
+});
 
 test('GirlsChannel times are read as Japan time whatever the browser time zone', () => {
     // 2026/11/08 01:11 in Japan (UTC+9) is 2026-11-07 16:11 UTC.

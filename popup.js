@@ -784,7 +784,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (backBtn) backBtn.addEventListener('click', closeSettingsView);
         if (setupBtn) setupBtn.addEventListener('click', openSettingsView);
         if (goToGCBtn) goToGCBtn.addEventListener('click', () => {
-            chrome.tabs.create({ url: 'https://www.girlschannel.net/' });
+            chrome.tabs.create({ url: globalThis.GirlsinSightParsing.GIRLSCHANNEL_HOME_URL });
         });
         if (analyzeBtn) analyzeBtn.addEventListener('click', analyzeCurrentTopic);
         
