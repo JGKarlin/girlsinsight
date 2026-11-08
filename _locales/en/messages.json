@@ -283,25 +283,19 @@
         "message": "How to get your Google AI Studio API Key"
     },
     "modalStep1": {
-        "message": "<strong>Visit Google AI Studio:</strong> Go to the <a href=\"https://aistudio.google.com/\" target=\"_blank\">Google AI Studio website</a>."
+        "message": "<strong>Open the API Keys page:</strong> Go to the <a href=\"https://aistudio.google.com/apikey\" target=\"_blank\">Google AI Studio API Keys page</a> and sign in with your Google account. No separate Gemini account or payment is needed."
     },
     "modalStep2": {
-        "message": "<strong>Sign in with a Google Account:</strong> Log in using your existing Google account. A separate “Gemini account” is not required."
+        "message": "<strong>New to AI Studio:</strong> Accept the terms. AI Studio creates a project and an API key for you. Copy the key."
     },
     "modalStep3": {
-        "message": "<strong>Generate an API Key:</strong> Click “Get API key” and create the key in a <strong>new project</strong>. A new project without billing uses the free tier."
+        "message": "<strong>Used AI Studio or Google Cloud before:</strong> Click <strong>Create API key</strong>. For free use, choose a project without billing, or add a new one under <strong>Dashboard › Projects</strong>."
     },
     "modalStep4": {
-        "message": "<strong>No Gemini Account Needed:</strong> Access to the Gemini API is managed through your Google account."
+        "message": "<strong>Paste the key:</strong> Paste it into <strong>Google Gemini API Key</strong> in GirlsinSight's settings and click <strong>Verify</strong>."
     },
     "modalStep5": {
-        "message": "<strong>No Payment Required Initially:</strong> You can start using the Gemini API without entering payment information."
-    },
-    "modalStep6": {
-        "message": "<strong>Use the Free Tier:</strong> Free daily limits depend on the model and are shown in Google AI Studio. Each analysis uses about two requests."
-    },
-    "modalStep7": {
-        "message": "<strong>Upgrade if Needed:</strong> If usage exceeds free limits, set up a billing account to upgrade to a paid plan with higher rate limits. A project with billing uses prepaid credits and stops when they run out; it does not fall back to the free tier."
+        "message": "<strong>Free tier:</strong> Free daily limits depend on the model and are shown in AI Studio. Each analysis uses about two requests. A project with billing is charged instead, and a prepaid project stops when its credits run out."
     },
     "archivedCopyLabel": {
         "message": "Archived copy"

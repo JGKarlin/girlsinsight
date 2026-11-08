@@ -326,7 +326,7 @@ GitHub Actions runs the suite on every push and pull request (`.github/workflows
 | Problem | What to check |
 |---|---|
 | "Please configure your Gemini API key" or "API key required" | Add a Gemini API key in Settings and click **Verify**. |
-| "API key is invalid or network error" | Make sure the key is active in Google AI Studio, has quota left and that you are online. |
+| "API key is invalid or network error" | Make sure the key is active in Google AI Studio, has quota left and that you are online. An older key that isn't restricted to the Gemini API is now rejected. Create a new key, or in AI Studio choose **Add restrictions › Restrict to Gemini API only**. |
 | "This API key can't use Gemini 3.6 Flash or newer" | The key's project does not offer a supported model. Create a key in a project that does, in Google AI Studio. |
 | "This API key's Google project uses prepaid billing and its credits have run out" | The key belongs to a project with Prepay billing and a $0 balance; Google blocks such a project instead of moving it to the free tier. Add credits in Google AI Studio, or create a key in a new project without billing and use that. |
 | "Gemini's rate limit was reached" | Wait a minute and run the analysis again. Free-tier keys have low per-minute limits. |

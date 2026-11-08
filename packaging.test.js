@@ -52,3 +52,22 @@ test('the Web Store package contains every file the extension loads and no tests
     }
     assert.deepEqual(entries.filter(entry => /\.test\.js$|^test-support\/|^scripts\/|^\.github\//.test(entry)), []);
 });
+
+// ---------------------------------------------------------------- API key guide
+
+const popupHtml = fs.readFileSync(path.join(__dirname, 'popup.html'), 'utf8');
+const guideLocales = ['en', 'ja'].map(locale => [locale, require(`./_locales/${locale}/messages.json`)]);
+
+test('the API key guide shows every step that has text, in English and Japanese', () => {
+    const shown = [...popupHtml.matchAll(/data-i18n="(modalStep\d+)"/g)].map(match => match[1]);
+    for (const [locale, messages] of guideLocales) {
+        const written = Object.keys(messages).filter(key => /^modalStep\d+$/.test(key));
+        assert.deepEqual(shown, written, `${locale} guide steps`);
+    }
+});
+
+test('the API key guide opens with a link straight to the AI Studio API Keys page', () => {
+    for (const [locale, messages] of guideLocales) {
+        assert.match(messages.modalStep1.message, /href="https:\/\/aistudio\.google\.com\/apikey"/, locale);
+    }
+});

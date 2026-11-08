@@ -287,25 +287,19 @@
         "message": "Google AI Studio APIキーの<br>入手方法"
     },
     "modalStep1": {
-        "message": "<strong>Google AI Studioにアクセス：</strong><a href=\"https://aistudio.google.com/\" target=\"_blank\">Google AI Studioのウェブサイト</a>にアクセスします。"
+        "message": "<strong>APIキーのページを開く：</strong><a href=\"https://aistudio.google.com/apikey\" target=\"_blank\">Google AI StudioのAPIキーのページ</a>を開き、Googleアカウントでログインします。Geminiの別アカウントや支払いは不要です。"
     },
     "modalStep2": {
-        "message": "<strong>Googleアカウントでサインイン：</strong>既存のGoogleアカウントでログインします。別途「Geminiアカウント」は不要です。"
+        "message": "<strong>AI Studioを初めて使う場合：</strong>利用規約に同意すると、AI StudioがプロジェクトとAPIキーを自動で作成します。そのキーをコピーします。"
     },
     "modalStep3": {
-        "message": "<strong>APIキーを生成：</strong>「APIキーを取得」をクリックし、<strong>新しいプロジェクト</strong>でキーを作成します。課金を設定していない新しいプロジェクトは無料枠で利用できます。"
+        "message": "<strong>AI StudioやGoogle Cloudを使ったことがある場合：</strong><strong>Create API key</strong>をクリックします。無料で使うには、課金を設定していないプロジェクトを選ぶか、<strong>Dashboard › Projects</strong>で新しいプロジェクトを追加します。"
     },
     "modalStep4": {
-        "message": "<strong>Geminiアカウントは不要：</strong>Gemini APIへのアクセスはGoogleアカウントで管理されます。"
+        "message": "<strong>キーを貼り付け：</strong>GirlsinSightの設定の<strong>Google Gemini APIキー</strong>に貼り付けて、<strong>検証</strong>をクリックします。"
     },
     "modalStep5": {
-        "message": "<strong>初期費用は不要：</strong>支払い情報を入力せずにGemini APIの利用を開始できます。"
-    },
-    "modalStep6": {
-        "message": "<strong>無料枠を利用：</strong>1日あたりの無料枠はモデルによって異なり、Google AI Studioで確認できます。1回の分析で使うリクエストは約2件です。"
-    },
-    "modalStep7": {
-        "message": "<strong>必要に応じてアップグレード：</strong>無料枠を超える場合は、請求先アカウントを設定して有料プランにアップグレードすると、より高いレート制限が適用されます。課金を設定したプロジェクトはプリペイドのクレジットを使い、残高がなくなると停止します。無料枠には戻りません。"
+        "message": "<strong>無料枠：</strong>1日あたりの無料枠はモデルによって異なり、AI Studioで確認できます。1回の分析で使うリクエストは約2件です。課金を設定したプロジェクトでは料金が発生し、プリペイドの場合はクレジットがなくなると停止します。"
     },
     "archivedCopyLabel": {
         "message": "アーカイブ版"
