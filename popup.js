@@ -40,6 +40,18 @@ const i18n = {
     }
 };
 
+// The status line for an analysis that failed to run. A message from the
+// service worker is already written for the user (a used-up prepaid project,
+// a busy Gemini, a missing model...) and is shown word for word; only
+// unexpected errors, such as a lost connection, get a generic message.
+function analysisErrorMessage(error, analysisResponse, getMessage) {
+    if (analysisResponse && analysisResponse.error) return analysisResponse.error;
+    const text = String((error && error.message) || '');
+    if (text.includes('timeout')) return getMessage('analysisTimeout');
+    if (text.includes('extract')) return getMessage('extractionFailed');
+    return getMessage('analysisFailed');
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
     try {
         // Initialize our custom localization first
@@ -613,6 +625,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 return;
             }
             
+            let analysisResponse = null;
             try {
                 // Ask for access only to the sites the topic post links to, plus
                 // the Wayback Machine for dead links. This runs first, while
@@ -667,7 +680,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 analysisPort = chrome.runtime.connect({ name: `analysis:${currentAnalysisId}` });
                 
                 // Delegate the entire analysis process to the background script
-                const analysisResponse = await chrome.runtime.sendMessage({
+                analysisResponse = await chrome.runtime.sendMessage({
                     action: 'startFullAnalysis',
                     data: {
                         analysisId: currentAnalysisId,
@@ -701,16 +714,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
                 if (analyzeBtn) analyzeBtn.style.display = 'inline-block'; // Show analyze button again
                 
-                let errorMessage = l('analysisFailed');
-                if (error.message.includes('timeout')) {
-                    errorMessage = l('analysisTimeout');
-                } else if (error.message.includes('extract')) {
-                    errorMessage = l('extractionFailed');
-                } else if (error.message.includes('API')) {
-                    errorMessage = l('apiKeyError');
-                }
-                
-                updateStatus('error', errorMessage);
+                updateStatus('error', analysisErrorMessage(error, analysisResponse, l));
                 if (document.body) document.body.classList.remove('analysis-results-view');
             }
         }
