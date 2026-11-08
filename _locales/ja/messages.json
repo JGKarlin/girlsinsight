@@ -310,6 +310,12 @@
     "rateLimited": {
         "message": "Geminiの利用制限に達しました。1分ほど待ってから、もう一度お試しください。"
     },
+    "geminiBusy": {
+        "message": "Geminiが混み合っていて応答できません。混雑時は無料枠のリクエストから先に断られます。数分後にもう一度お試しください。"
+    },
+    "geminiBusyRetrying": {
+        "message": "Geminiが混み合っています。再試行しています…"
+    },
     "prepaidCreditsDepleted": {
         "message": "このAPIキーのGoogleプロジェクトはプリペイド課金で、クレジットが残っていません。Google AI Studioでクレジットを追加するか、無料枠を使うには課金を設定していない新しいプロジェクトのキーをお使いください。"
     },

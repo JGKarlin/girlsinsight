@@ -34,6 +34,11 @@ const SAFETY_SETTINGS = [
 ].map(category => ({ category, threshold: 'OFF' }));
 // Longest wait a rate-limit reply may ask for before we give up instead.
 const MAX_RETRY_WAIT_MS = 30_000;
+// How long to wait for Gemini to start answering before trying again. Under
+// heavy demand Gemini can hold free-tier requests without ever answering.
+// The essay gets longer because its deep thinking comes before any text.
+const RESPONSE_TIMEOUT_MS = 60_000;
+const ESSAY_RESPONSE_TIMEOUT_MS = 180_000;
 // How often streamed essay text is forwarded to the side panel.
 const DRAFT_INTERVAL_MS = 300;
 // Comments sent for sentiment analysis in manual mode, until the user picks a number.
@@ -563,6 +568,7 @@ class GirlsinSightBackground {
             return { success: false, error };
         }
         this.geminiModel = validationResult.model;
+        this.geminiModels = validationResult.models;
         
         // Setup promises to wait for data from content script
         let initialDataResolver, allCommentsResolver;
@@ -772,11 +778,11 @@ class GirlsinSightBackground {
                 pageToken = data.nextPageToken;
             }
 
-            const model = this.pickGeminiModel(models);
-            if (!model) {
+            const usableModels = this.usableGeminiModels(models);
+            if (!usableModels.length) {
                 return { success: false, modelUnavailable: true, error: i18n.getMessage('modelUnavailable') };
             }
-            return { success: true, model };
+            return { success: true, model: usableModels[0], models: usableModels };
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('API key validation failed:', error);
@@ -787,18 +793,24 @@ class GirlsinSightBackground {
     // GEMINI_MODEL if the key can use it, otherwise the newest stable Flash
     // model new enough for this request format, otherwise null.
     pickGeminiModel(models) {
+        return this.usableGeminiModels(models)[0] || null;
+    }
+
+    // Every model this key can use, best first: GEMINI_MODEL, then stable
+    // Flash models new enough for this request format, newest first. The ones
+    // after the first are fallbacks for when Gemini is too busy.
+    usableGeminiModels(models) {
         const usable = models
             .filter(model => (model.supportedGenerationMethods || []).includes('generateContent'))
             .map(model => String(model.name || '').replace(/^models\//, ''));
-        if (usable.includes(GEMINI_MODEL)) return GEMINI_MODEL;
-
-        const candidates = usable
+        const flash = usable
             .map(name => ({ name, match: name.match(/^gemini-(\d+)(?:\.(\d+))?-flash$/) }))
             .filter(({ match }) => match)
             .map(({ name, match }) => ({ name, version: Number(match[1]) * 100 + Number(match[2] || 0) }))
             .filter(({ version }) => version >= MIN_FALLBACK_FLASH_VERSION)
-            .sort((a, b) => b.version - a.version);
-        return candidates.length ? candidates[0].name : null;
+            .sort((a, b) => b.version - a.version)
+            .map(({ name }) => name);
+        return [...new Set([...(usable.includes(GEMINI_MODEL) ? [GEMINI_MODEL] : []), ...flash])];
     }
 
     // Keep the service worker alive during long operations
@@ -1164,6 +1176,7 @@ Score: <0-10>`;
                 thinkingLevel,
                 onText: drafts.update,
                 signal,
+                timeoutMs: ESSAY_RESPONSE_TIMEOUT_MS,
             });
             let response;
             try {
@@ -1181,7 +1194,7 @@ Score: <0-10>`;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error('Error analyzing sentiment:', error);
-            const knownMessages = ['apiKeyInvalid', 'rateLimited', 'prepaidCreditsDepleted'].map(key => i18n.getMessage(key));
+            const knownMessages = ['apiKeyInvalid', 'rateLimited', 'prepaidCreditsDepleted', 'geminiBusy'].map(key => i18n.getMessage(key));
             const details = error.code === 'MAX_TOKENS'
                 ? i18n.getMessage('sentimentIncomplete')
                 : knownMessages.includes(error.message)
@@ -1463,6 +1476,7 @@ Score: <0-10>`;
         onText = null,
         signal,
         maxAttempts = 3,
+        timeoutMs = RESPONSE_TIMEOUT_MS,
     } = {}) {
         const body = JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
@@ -1478,33 +1492,58 @@ Score: <0-10>`;
                 if (onText && attempt > 1) onText(''); // a retry starts the text over
                 debugLog(`Gemini ${model} attempt ${attempt}/${maxAttempts}`);
 
-                let response;
+                // Each attempt has its own abort: the run's signal (panel closed)
+                // or the time limit for Gemini to start answering.
+                const attemptAbort = new AbortController();
+                const stopAttempt = () => attemptAbort.abort();
+                if (signal) signal.addEventListener('abort', stopAttempt, { once: true });
+                let timedOut = false;
+                const timer = setTimeout(() => { timedOut = true; attemptAbort.abort(); }, timeoutMs);
                 try {
-                    response = await fetch(`${GEMINI_API}/models/${model}:${method}`, {
-                        method: 'POST',
-                        signal,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-goog-api-key': this.settings.geminiApiKey,
-                        },
-                        body,
-                    });
-                } catch (networkError) {
-                    if (networkError.name === 'AbortError') throw networkError;
-                    throw this.geminiError(`Network error: ${networkError.message}`, { retryable: true });
-                }
-                if (!response.ok) throw await this.geminiHttpError(response);
+                    let response;
+                    try {
+                        response = await fetch(`${GEMINI_API}/models/${model}:${method}`, {
+                            method: 'POST',
+                            signal: attemptAbort.signal,
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'x-goog-api-key': this.settings.geminiApiKey,
+                            },
+                            body,
+                        });
+                    } catch (networkError) {
+                        if (timedOut && !(signal && signal.aborted)) {
+                            throw this.geminiError(i18n.getMessage('geminiBusy'), { retryable: true, code: 'BUSY' });
+                        }
+                        if (networkError.name === 'AbortError') throw networkError;
+                        throw this.geminiError(`Network error: ${networkError.message}`, { retryable: true });
+                    } finally {
+                        clearTimeout(timer);
+                    }
+                    if (!response.ok) throw await this.geminiHttpError(response);
 
-                const reply = { text: '', finishReason: null, blockReason: null };
-                if (onText) await this.readGeminiStream(response, reply, onText);
-                else this.absorbGeminiChunk(reply, await response.json());
-                return this.finishGeminiReply(reply);
+                    const reply = { text: '', finishReason: null, blockReason: null };
+                    if (onText) await this.readGeminiStream(response, reply, onText);
+                    else this.absorbGeminiChunk(reply, await response.json());
+                    return this.finishGeminiReply(reply);
+                } finally {
+                    if (signal) signal.removeEventListener('abort', stopAttempt);
+                }
             } catch (error) {
                 if (error.name === 'AbortError' || (signal && signal.aborted)) throw this.abortError();
                 console.error(`Gemini API attempt ${attempt} failed:`, error);
                 // Only failures a retry can fix are retried: network errors,
-                // server errors and rate limits (after the wait Gemini asks for).
+                // server errors, a busy Gemini and rate limits (after the wait
+                // Gemini asks for).
                 if (error.retryable === false || attempt === maxAttempts) throw error;
+                if (error.code === 'BUSY') {
+                    // Free-tier traffic is shed first, and the newest model is the
+                    // busiest. Move to the next model for this and later requests.
+                    const models = this.geminiModels || [];
+                    const next = models[models.indexOf(model) + 1];
+                    if (next) model = this.geminiModel = next;
+                    this.sendProgress(i18n.getMessage('geminiBusyRetrying'), this.activeAnalysisId);
+                }
                 await this.delayWithSignal(error.retryAfterMs ?? 1000 * attempt, signal);
             }
         }
@@ -1533,6 +1572,10 @@ Score: <0-10>`;
             (String(apiError.message || '').includes('API key') ||
              details.some(detail => String(detail.reason || '').startsWith('API_KEY')));
         if (isKeyError) return this.geminiError(i18n.getMessage('apiKeyInvalid'), { code: 'API_KEY' });
+
+        if (response.status === 503) {
+            return this.geminiError(i18n.getMessage('geminiBusy'), { retryable: true, code: 'BUSY' });
+        }
 
         if (response.status === 402) {
             return this.geminiError(i18n.getMessage('prepaidCreditsDepleted'), { code: 'PREPAID_CREDITS_DEPLETED' });

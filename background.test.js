@@ -358,6 +358,69 @@ test('credits that run out at the sentiment request are named in the sentiment r
     assert.equal(sentiment.details, en.prepaidCreditsDepleted.message);
 });
 
+// What Gemini answers when it sheds free-tier traffic under heavy demand.
+const overloaded = () => jsonResponse(503, errorBody(503, 'UNAVAILABLE',
+    'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.'));
+// A request Gemini never answers; it ends only when the request is aborted.
+const neverAnswers = request => new Promise((_, reject) => request.signal.addEventListener('abort', () => {
+    const error = new Error('aborted');
+    error.name = 'AbortError';
+    reject(error);
+}));
+
+test('a summary request Gemini never answers is given up after 60 s and sent to the fallback model', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (request.model === 'gemini-3.8-flash' ? neverAnswers(request) : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
+    });
+    const outcome = await Promise.race([
+        runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 }),
+        new Promise(resolve => setTimeout(() => resolve('still stuck'), 2000)),
+    ]);
+
+    assert.notEqual(outcome, 'still stuck', 'the run never moved past the summary request');
+    assert.equal(outcome.result.success, true);
+    assert.ok(harness.timerDelays.includes(60_000), 'the summary request had a 60 s time limit');
+    const summary = harness.runtimeMessages.find(m => m.action === 'partialResults' && m.type === 'summary');
+    assert.equal(summary.data.summary, 'A summary.');
+});
+
+test('the essay waits up to 3 minutes for Gemini to start, since its deep thinking comes first', async () => {
+    const harness = await loadBackground({ sync: { language: 'en' } });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+    assert.ok(harness.timerDelays.includes(180_000));
+});
+
+test('when the main model is too busy the next try uses the fallback model and the run finishes', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (request.model === 'gemini-3.8-flash' ? overloaded() : scriptedGemini(() => geminiText('An essay.\nSentiment: Positive\nScore: 7'))(request)),
+    });
+    const { result, sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.equal(result.success, true);
+    assert.equal(sentiment.score, 7);
+    assert.ok(harness.geminiRequests.some(r => r.model === 'gemini-3.6-flash'), 'the fallback model was used');
+});
+
+test('while Gemini is busy the panel says it is trying again', async () => {
+    const harness = await loadBackground({
+        sync: { language: 'en' },
+        gemini: request => (request.model === 'gemini-3.8-flash' ? overloaded() : geminiText('A summary.')),
+    });
+    await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.ok(harness.runtimeMessages.some(m => m.action === 'analysisProgress' && m.message === en.geminiBusyRetrying.message));
+});
+
+test('a busy spell that does not clear is reported as Gemini being busy', async () => {
+    const harness = await loadBackground({ sync: { language: 'en' }, gemini: overloaded });
+    const { sentiment } = await runFullAnalysis(harness, { comments: polarizedTopic(), settings: manual10 });
+
+    assert.equal(sentiment.score, null);
+    assert.equal(sentiment.details, en.geminiBusy.message);
+});
+
 for (const [name, reply] of [
     ['a missing model (404)', () => jsonResponse(404, errorBody(404, 'NOT_FOUND', 'models/x is not found'))],
     ['a blocked prompt', () => jsonResponse(200, { promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } })],

@@ -306,6 +306,12 @@
     "rateLimited": {
         "message": "Gemini's rate limit was reached. Wait a minute, then try again."
     },
+    "geminiBusy": {
+        "message": "Gemini is too busy to answer right now. When demand is high, free-tier requests are the first to be turned away. Try again in a few minutes."
+    },
+    "geminiBusyRetrying": {
+        "message": "Gemini is busy. Trying again…"
+    },
     "prepaidCreditsDepleted": {
         "message": "This API key's Google project uses prepaid billing and its credits have run out. Add credits in Google AI Studio, or use a key from a new project without billing to use the free tier."
     },
