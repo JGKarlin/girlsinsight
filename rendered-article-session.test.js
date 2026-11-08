@@ -241,3 +241,100 @@ test('cancelling while the tab is being created removes the late tab', async () 
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(removedTabId, 73);
 });
+
+// ---------------------------------------------------------------- slow, busy news pages
+
+test('a page that never reports "loaded" is still read once its text is there', async () => {
+    // Ad-heavy pages in a hidden tab can take far longer than the time limit to
+    // finish loading every ad and video, though the article text is already there.
+    const fake = makeChrome({ completeNavigation: false });
+    const session = await RenderedArticleSession.open({
+        chromeApi: fake.chromeApi,
+        statusProbe: fake.statusProbe,
+        loadTimeoutMs: 20,
+        stabilityTimeoutMs: 50,
+    });
+
+    const result = await session.load('https://www.oricon.co.jp/news/2491485/full/');
+    await session.close();
+
+    assert.equal(result.status, 'success');
+    assert.equal(fake.calls.extraction, 1);
+});
+
+test('a page that never loads and has no article text still reports a timeout', async () => {
+    const fake = makeChrome({ completeNavigation: false, extractionStatus: 'notArticle' });
+    const session = await RenderedArticleSession.open({
+        chromeApi: fake.chromeApi,
+        statusProbe: fake.statusProbe,
+        loadTimeoutMs: 20,
+        stabilityTimeoutMs: 50,
+    });
+
+    const result = await session.load('https://news.example/slow');
+    await session.close();
+
+    assert.equal(result.status, 'timeout');
+});
+
+// Runs the real extractRenderedArticlePage against a minimal page: Readability
+// returns `readabilityText`, and the page has one <article> holding `articleText`.
+function extractFrom({ readabilityText, articleText }) {
+    const vm = require('node:vm');
+    const { extractRenderedArticlePage } = require('./rendered-article-session.js');
+    const element = text => ({
+        innerText: text,
+        textContent: text,
+        cloneNode() { return { ...element(text), querySelectorAll: () => [] }; },
+        querySelectorAll: () => [],
+    });
+    const document = {
+        title: 'Perfume・のっち、結婚を発表',
+        body: { innerText: `${readabilityText}\n${articleText}` },
+        cloneNode: () => ({}),
+        querySelector: () => null,
+        querySelectorAll: selector => (/^(?:article|main article)\b|^article,/.test(selector) ? [element(articleText)] : []),
+    };
+    class Readability {
+        parse() { return { textContent: readabilityText, title: document.title }; }
+    }
+    const context = vm.createContext({
+        document,
+        Readability,
+        location: { href: 'https://www.oricon.co.jp/news/2491485/full/', origin: 'https://www.oricon.co.jp' },
+        URL,
+    });
+    return JSON.parse(JSON.stringify(vm.runInContext(`(${extractRenderedArticlePage.toString()})()`, context)));
+}
+
+const STORY = [
+    'Perfume・のっち（38）が8日、所属事務所の公式サイトを通じ、結婚を発表した。',
+    'お相手は俳優の渋谷謙人（38）。',
+    '事務所の公式サイトでは、温かい支援への感謝とともに結婚を報告した。',
+    '「日頃より応援してくださっている皆さまにおかれましては、温かく見守り応援していただけますと幸いです」と呼びかけた。',
+    'のっちは1988年9月20日生まれ、広島県出身。',
+    '渋谷は1988年4月23日生まれ、神奈川県出身。8歳で子役として活動を始めた。',
+].join('\n');
+const MENU_AND_ADS = [
+    'トップ', '芸能', '音楽', 'ドラマ&映画', 'アニメ&ゲーム', '動画配信サービス', 'スポーツ', '社会・経済',
+    'グルメ', 'ビューティ', 'ライフ', 'ランキング', '推し活', '新着トレンド', 'ホーム（オリコンニュース）', '芸能 TOP',
+    '営業/ブランドセールス/インターネット/Webサービス・ASP 年収500万円～1,000万円 正社員 / 東京都',
+    '事務サポート 未経験歓迎 完休2日/残業月3h/賞与初年度3回/書類選考なし/転勤なし 月給22万1,440円～30万円',
+    '業務推進メンバー/インターネット/Webサービス・ASP 年収350万円～600万円 正社員 / 東京都',
+    '続きはこちら', 'sponsored by 求人ボックス',
+].join('\n');
+
+test('when Readability returns a site menu and ads instead of the story, the article element is used', () => {
+    const page = extractFrom({ readabilityText: MENU_AND_ADS, articleText: `${STORY}\n関連写真\nあなたにおすすめの記事` });
+
+    assert.equal(page.status, 'success');
+    assert.ok(page.text.includes('結婚を発表した'), page.text.slice(0, 200));
+    assert.ok(!page.text.includes('ドラマ&映画'), 'the site menu was not used');
+});
+
+test('a Readability result that holds the story is kept, even when the page element has more around it', () => {
+    const page = extractFrom({ readabilityText: STORY, articleText: `${STORY}\n${MENU_AND_ADS}` });
+
+    assert.equal(page.extractionMethod, 'readability');
+    assert.ok(!page.text.includes('求人ボックス'));
+});

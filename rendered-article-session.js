@@ -118,6 +118,12 @@
                 .trim();
         }
 
+        // Sentence endings in a text. A site menu or a block of ads has almost
+        // none; a news story has many.
+        function sentenceCount(value) {
+            return (String(value || '').match(/[。！？]|[.!?](?=\s|$)/g) || []).length;
+        }
+
         function jsonLdArticleBody() {
             const bodies = [];
             function visit(value) {
@@ -209,9 +215,15 @@
         const fallbackText = longestVisibleArticleText();
         const readabilityText = normalizedText(parsed && parsed.textContent);
         // Readability's scoring intentionally removes navigation, comments, and
-        // recommendations. Only use broader DOM fallbacks if it could not parse.
-        let text = readabilityText || jsonLdText || fallbackText;
-        const extractionMethod = readabilityText
+        // recommendations. Only use broader DOM fallbacks if it could not parse,
+        // or if what it picked has far fewer sentences than the page's article
+        // element: on some busy pages it picks the site menu and ads instead.
+        const readabilityMissedStory = Boolean(readabilityText) &&
+            sentenceCount(fallbackText) >= 3 &&
+            sentenceCount(readabilityText) * 3 < sentenceCount(fallbackText);
+        const storyText = readabilityMissedStory ? '' : readabilityText;
+        let text = storyText || jsonLdText || fallbackText;
+        const extractionMethod = storyText
             ? 'readability'
             : (jsonLdText ? 'jsonLd' : 'fallback');
 
@@ -311,7 +323,17 @@
                 .then(() => this.statusProbe(url, { signal: probeController.signal }))
                 .catch(() => null);
             try {
-                await this.navigate(url, signal);
+                // Busy pages in a hidden tab can take far longer than the time
+                // limit to finish loading every ad, though the article is already
+                // on the page. Read what is there; report a timeout only if that
+                // finds no article.
+                let navigationTimedOut = false;
+                try {
+                    await this.navigate(url, signal);
+                } catch (error) {
+                    if (!error || error.name !== 'TimeoutError') throw error;
+                    navigationTimedOut = true;
+                }
                 await this.waitForDomStability(signal);
                 await raceWithSignal(this.chrome.scripting.executeScript({
                     target: { tabId: this.tabId },
@@ -327,6 +349,7 @@
                     text: '',
                 };
                 if (page.status === 'success') return page;
+                if (navigationTimedOut) return { status: 'timeout', finalUrl: url, text: '' };
 
                 const statusCode = await raceWithSignal(statusPromise, signal);
                 if (page.status !== 'success' &&
